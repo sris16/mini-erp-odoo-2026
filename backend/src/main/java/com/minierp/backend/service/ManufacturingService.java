@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -16,7 +15,6 @@ public class ManufacturingService {
     private final ManufacturingOrderRepository manufacturingOrderRepository;
     private final WorkOrderRepository workOrderRepository;
     private final BomComponentRepository bomComponentRepository;
-    private final ProductRepository productRepository;
     private final StockLedgerService stockLedgerService;
     private final ProcurementService procurementService;
     private final PurchaseOrderService purchaseOrderService;
@@ -25,7 +23,6 @@ public class ManufacturingService {
     public ManufacturingService(ManufacturingOrderRepository manufacturingOrderRepository,
                                 WorkOrderRepository workOrderRepository,
                                 BomComponentRepository bomComponentRepository,
-                                ProductRepository productRepository,
                                 StockLedgerService stockLedgerService,
                                 ProcurementService procurementService,
                                 PurchaseOrderService purchaseOrderService,
@@ -33,7 +30,6 @@ public class ManufacturingService {
         this.manufacturingOrderRepository = manufacturingOrderRepository;
         this.workOrderRepository = workOrderRepository;
         this.bomComponentRepository = bomComponentRepository;
-        this.productRepository = productRepository;
         this.stockLedgerService = stockLedgerService;
         this.procurementService = procurementService;
         this.purchaseOrderService = purchaseOrderService;
