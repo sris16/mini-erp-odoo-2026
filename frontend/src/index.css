@@ -109,3 +109,14 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* Global Font Size Customizations */
+html.font-small {
+  font-size: 13px !important;
+}
+html.font-medium {
+  font-size: 16px !important;
+}
+html.font-large {
+  font-size: 19px !important;
+}

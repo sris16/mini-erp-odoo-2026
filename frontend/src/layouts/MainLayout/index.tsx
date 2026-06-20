@@ -39,10 +39,12 @@ import {
   AccountCircle as UserIcon,
   Receipt as InvoicingIcon,
   ManageAccounts as UsersIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 
 import NotificationCenter from '../../components/common/NotificationCenter';
 import CommandPalette from '../../components/common/CommandPalette';
+import SettingsDialog from '../../components/common/SettingsDialog';
 import { useAppSelector, useAppDispatch, authActions } from '../../store';
 
 const drawerWidth = 240;
@@ -98,6 +100,7 @@ interface MainLayoutProps {
 export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps) {
   const [open, setOpen] = useState(true);
   const [profileAnchor, setProfileAnchor] = useState<HTMLElement | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useAppDispatch();
@@ -226,6 +229,11 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
 
             {/* Notification Bell */}
             <NotificationCenter />
+
+            {/* Settings Dialogue Button */}
+            <IconButton color="inherit" onClick={() => setSettingsOpen(true)}>
+              <SettingsIcon />
+            </IconButton>
 
             {/* Theme Toggle */}
             <IconButton color="inherit" onClick={toggleDarkMode}>
@@ -377,6 +385,9 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
 
       {/* Global Command Palette dialog */}
       <CommandPalette />
+
+      {/* Global Settings dialog */}
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </Box>
   );
 }

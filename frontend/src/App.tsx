@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import { ThemeProvider, CssBaseline } from '@mui/material';
@@ -11,6 +11,12 @@ function App() {
     const saved = localStorage.getItem('darkMode');
     return saved ? saved === 'true' : false;
   });
+
+  useEffect(() => {
+    const savedSize = localStorage.getItem('fontSize') || 'medium';
+    document.documentElement.className = '';
+    document.documentElement.classList.add(`font-${savedSize}`);
+  }, []);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => {
