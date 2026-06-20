@@ -99,7 +99,7 @@ export default function Dashboard() {
       const updated = localStorage.getItem('dashboardSettings');
       if (updated) {
         try {
-          setSettings((prev) => ({ ...prev, ...JSON.parse(updated) }));
+          setSettings((prev: any) => ({ ...prev, ...JSON.parse(updated) }));
         } catch (_e) {
           // ignore parsing error
         }
