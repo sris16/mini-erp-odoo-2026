@@ -22,7 +22,6 @@ import {
 } from '@mui/material';
 import {
   Menu as MenuIcon,
-  ChevronLeft as ChevronLeftIcon,
   Dashboard as DashboardIcon,
   ShoppingBag as ProductsIcon,
   People as CustomersIcon,
@@ -129,7 +128,7 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
                 border: '2px solid white',
               }}
             >
-              <Typography variant="body1" fontWeight="bold" color="white">
+              <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'white' }}>
                 S
               </Typography>
             </Avatar>
@@ -155,7 +154,7 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
                   '&:hover': { opacity: 1 },
                 }}
               >
-                <SearchIcon size="small" sx={{ mr: 1, fontSize: 18 }} />
+                <SearchIcon sx={{ mr: 1, fontSize: 18 }} />
                 <Typography variant="body2" sx={{ mr: 1, fontSize: '0.8rem', display: { xs: 'none', md: 'inline' } }}>
                   Search modules...
                 </Typography>
@@ -192,12 +191,12 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
               anchorEl={profileAnchor}
               open={Boolean(profileAnchor)}
               onClose={handleProfileClose}
-              PaperProps={{ sx: { width: 180, mt: 1.5 } }}
+              slotProps={{ paper: { sx: { width: 180, mt: 1.5 } } }}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             >
               <Box sx={{ px: 2, py: 1 }}>
-                <Typography variant="subtitle2" fontWeight={600}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                   Admin User
                 </Typography>
                 <Typography variant="body2" color="text.secondary" noWrap>

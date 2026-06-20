@@ -97,12 +97,6 @@ export const lightTheme = createTheme({
             boxShadow: 'none',
           },
         },
-        containedPrimary: {
-          backgroundColor: '#714B67',
-          '&:hover': {
-            backgroundColor: '#5C3D55',
-          },
-        },
       },
     },
     MuiCard: {

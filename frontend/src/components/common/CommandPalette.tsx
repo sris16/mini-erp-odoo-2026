@@ -81,11 +81,13 @@ export default function CommandPalette() {
         onClose={() => setOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 3,
-            boxShadow: 24,
-            backgroundImage: 'none',
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 3,
+              boxShadow: 24,
+              backgroundImage: 'none',
+            },
           },
         }}
       >
@@ -98,9 +100,11 @@ export default function CommandPalette() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             autoFocus
-            InputProps={{
-              disableUnderline: true,
-              style: { fontSize: '1rem' },
+            slotProps={{
+              input: {
+                disableUnderline: true,
+                style: { fontSize: '1rem' },
+              },
             }}
           />
           <Typography variant="caption" sx={{ px: 1, py: 0.5, bgcolor: 'action.selected', borderRadius: 1, mr: 1, display: { xs: 'none', sm: 'inline-block' } }}>
@@ -125,8 +129,10 @@ export default function CommandPalette() {
                   <ListItemText
                     primary={cmd.name}
                     secondary={cmd.category}
-                    primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
-                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                    slotProps={{
+                      primary: { sx: { fontSize: '0.875rem', fontWeight: 500 } },
+                      secondary: { sx: { fontSize: '0.75rem' } },
+                    }}
                   />
                 </ListItemButton>
               ))}

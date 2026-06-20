@@ -64,12 +64,14 @@ export default function NotificationCenter() {
           vertical: 'top',
           horizontal: 'right',
         }}
-        PaperProps={{
-          sx: { width: 320, mt: 1.5, borderRadius: 2 },
+        slotProps={{
+          paper: {
+            sx: { width: 320, mt: 1.5, borderRadius: 2 },
+          },
         }}
       >
         <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="subtitle1" fontWeight={600}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
             Notifications
           </Typography>
           {unreadCount > 0 && (
@@ -96,8 +98,21 @@ export default function NotificationCenter() {
                 <ListItemText
                   primary={n.message}
                   secondary={`${n.module} • ${n.time}`}
-                  primaryTypographyProps={{ fontSize: '0.8125rem', color: 'text.primary', fontWeight: n.unread ? 500 : 400 }}
-                  secondaryTypographyProps={{ fontSize: '0.75rem', mt: 0.5 }}
+                  slotProps={{
+                    primary: {
+                      sx: {
+                        fontSize: '0.8125rem',
+                        color: 'text.primary',
+                        fontWeight: n.unread ? 500 : 400,
+                      },
+                    },
+                    secondary: {
+                      sx: {
+                        fontSize: '0.75rem',
+                        mt: 0.5,
+                      },
+                    },
+                  }}
                 />
               </ListItem>
               <Divider />
