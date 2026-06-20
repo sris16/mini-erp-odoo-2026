@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -41,7 +41,7 @@ import {
   useAppDispatch,
   useAppSelector,
   bomActions,
-  auditLogsActions,
+  productsActions,
 } from '../../store';
 
 const schema = yup.object().shape({
@@ -72,6 +72,11 @@ export default function BoM() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    dispatch(bomActions.fetchBoms());
+    dispatch(productsActions.fetchProducts());
+  }, [dispatch]);
 
   const {
     control,
@@ -107,13 +112,6 @@ export default function BoM() {
   const handleDelete = (id: number, productName: string) => {
     if (window.confirm(`Are you sure you want to delete BoM for ${productName}?`)) {
       dispatch(bomActions.deleteBoM(id));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Deleted Bill of Materials (BoM) for ${productName}`,
-          module: 'BoM',
-        })
-      );
     }
   };
 
@@ -129,14 +127,6 @@ export default function BoM() {
       bomActions.addBoM({
         finishedProduct: data.finishedProduct,
         components: componentsVal as { name: string; qty: number }[],
-      })
-    );
-
-    dispatch(
-      auditLogsActions.addAuditLog({
-        user: 'Admin',
-        action: `Created Bill of Materials (BoM) for ${data.finishedProduct}`,
-        module: 'BoM',
       })
     );
 

@@ -29,6 +29,11 @@ public class ProductController {
         return ResponseEntity.ok(productService.getAllProducts());
     }
 
+    @GetMapping("/ledger")
+    public ResponseEntity<List<StockLedger>> getAllLedger() {
+        return ResponseEntity.ok(stockLedgerService.getAllLedger());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Product> getProductById(@PathVariable Long id) {
         return ResponseEntity.ok(productService.getProductById(id));

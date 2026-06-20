@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -38,7 +38,6 @@ import {
   useAppDispatch,
   useAppSelector,
   productsActions,
-  auditLogsActions,
   type Product,
 } from '../../store';
 
@@ -57,6 +56,10 @@ type ProductFormData = yup.InferType<typeof schema>;
 export default function Products() {
   const dispatch = useAppDispatch();
   const products = useAppSelector((state) => state.products.items);
+
+  useEffect(() => {
+    dispatch(productsActions.fetchProducts());
+  }, [dispatch]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
@@ -112,13 +115,6 @@ export default function Products() {
   const handleDelete = (id: number, name: string) => {
     if (window.confirm(`Are you sure you want to delete product ${name}?`)) {
       dispatch(productsActions.deleteProduct(id));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Deleted Product (ID: ${id}, Name: ${name})`,
-          module: 'Products',
-        })
-      );
     }
   };
 
@@ -130,22 +126,8 @@ export default function Products() {
     if (editingProduct) {
       const updated: Product = { id: editingProduct.id, ...data } as Product;
       dispatch(productsActions.editProduct(updated));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Updated Product ${data.name} (SKU: ${data.sku})`,
-          module: 'Products',
-        })
-      );
     } else {
       dispatch(productsActions.addProduct(data as Omit<Product, 'id'>));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Created Product ${data.name} (SKU: ${data.sku})`,
-          module: 'Products',
-        })
-      );
     }
     setOpen(false);
   };

@@ -27,7 +27,15 @@ import {
   Tooltip as ChartTooltip,
   Legend,
 } from 'recharts';
-import { useAppSelector } from '../../store';
+import { useEffect } from 'react';
+import {
+  useAppSelector,
+  useAppDispatch,
+  productsActions,
+  salesActions,
+  purchaseActions,
+  manufacturingActions,
+} from '../../store';
 
 // Static mock chart data
 const salesTrendData = [
@@ -42,6 +50,14 @@ const salesTrendData = [
 
 export default function Dashboard() {
   const theme = useTheme();
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    dispatch(productsActions.fetchProducts());
+    dispatch(salesActions.fetchSalesOrders());
+    dispatch(purchaseActions.fetchPurchaseOrders());
+    dispatch(manufacturingActions.fetchManufacturingOrders());
+  }, [dispatch]);
 
   // Dynamic Redux state counts
   const products = useAppSelector((state) => state.products.items);

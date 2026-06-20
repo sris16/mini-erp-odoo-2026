@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -34,8 +34,8 @@ import {
   useAppDispatch,
   useAppSelector,
   manufacturingActions,
-  auditLogsActions,
-  inventoryActions,
+  productsActions,
+  bomActions,
   type ManufacturingOrder,
 } from '../../store';
 
@@ -55,9 +55,14 @@ export default function Manufacturing() {
   const dispatch = useAppDispatch();
   const mfgOrders = useAppSelector((state) => state.manufacturing.orders);
   const products = useAppSelector((state) => state.products.items);
-  const boms = useAppSelector((state) => state.bom.items);
 
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    dispatch(manufacturingActions.fetchManufacturingOrders());
+    dispatch(productsActions.fetchProducts());
+    dispatch(bomActions.fetchBoms());
+  }, [dispatch]);
 
   const {
     control,
@@ -90,15 +95,6 @@ export default function Manufacturing() {
       manufacturingActions.addManufacturingOrder({
         productName: data.productName,
         quantity: data.quantity,
-        status: 'Draft',
-      })
-    );
-
-    dispatch(
-      auditLogsActions.addAuditLog({
-        user: 'Admin',
-        action: `Created Manufacturing Order for ${data.quantity}x ${data.productName}`,
-        module: 'Manufacturing',
       })
     );
 
@@ -106,75 +102,10 @@ export default function Manufacturing() {
   };
 
   const handleAdvanceStatus = (row: ManufacturingOrder) => {
-    let nextStatus: 'Draft' | 'In Progress' | 'Completed' = 'Draft';
-    if (row.status === 'Draft') nextStatus = 'In Progress';
-    else if (row.status === 'In Progress') nextStatus = 'Completed';
-
-    dispatch(
-      manufacturingActions.updateManufacturingStatus({
-        moNumber: row.moNumber,
-        status: nextStatus,
-      })
-    );
-
-    dispatch(
-      auditLogsActions.addAuditLog({
-        user: 'Admin',
-        action: `Advanced status of Manufacturing Order ${row.moNumber} to ${nextStatus}`,
-        module: 'Manufacturing',
-      })
-    );
-
-    // If advanced to Completed:
-    // 1. Increase inventory of finished product
-    // 2. Add Stock Ledger IN entry
-    // 3. (Optional but nice) Consume BoM raw ingredients
-    if (nextStatus === 'Completed') {
-      const prod = products.find((p) => p.name === row.productName);
-      if (prod) {
-        // Increase finished product stock
-        dispatch(
-          inventoryActions.updateStock({
-            productId: prod.id,
-            change: row.quantity,
-          })
-        );
-        dispatch(
-          inventoryActions.addLedgerEntry({
-            date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-            productName: row.productName,
-            movementType: 'IN (Manufacturing)',
-            quantity: row.quantity,
-            reference: row.moNumber,
-          })
-        );
-
-        // Consume raw components if BoM exists
-        const bom = boms.find((b) => b.finishedProduct === row.productName);
-        if (bom) {
-          bom.components.forEach((comp) => {
-            const rawProd = products.find((p) => p.name === comp.name);
-            if (rawProd) {
-              const consumedQty = comp.qty * row.quantity;
-              dispatch(
-                inventoryActions.updateStock({
-                  productId: rawProd.id,
-                  change: -consumedQty,
-                })
-              );
-              dispatch(
-                inventoryActions.addLedgerEntry({
-                  date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-                  productName: comp.name,
-                  movementType: 'OUT (Consumed)',
-                  quantity: consumedQty,
-                  reference: row.moNumber,
-                })
-              );
-            }
-          });
-        }
-      }
+    if (row.status === 'Draft') {
+      dispatch(manufacturingActions.confirmManufacturingOrder(row.id));
+    } else if (row.status === 'In Progress') {
+      dispatch(manufacturingActions.completeManufacturingOrder(row.id));
     }
   };
 
@@ -260,6 +191,51 @@ export default function Manufacturing() {
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                             Target Quantity: {order.quantity} units
                           </Typography>
+
+                          {order.workOrders && order.workOrders.length > 0 && (
+                            <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 1 }}>
+                                Work Center Operations:
+                              </Typography>
+                              <Stack spacing={1}>
+                                {order.workOrders.map((wo) => (
+                                  <Stack key={wo.id} direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Typography variant="body2" sx={{ fontSize: '0.8rem', color: 'text.primary' }}>
+                                      {wo.workCenterName}
+                                    </Typography>
+                                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                                      <Chip 
+                                        label={wo.status} 
+                                        size="small" 
+                                        sx={{ fontSize: '0.65rem', height: 16 }} 
+                                        color={wo.status === 'DONE' ? 'success' : wo.status === 'IN_PROGRESS' ? 'warning' : 'default'}
+                                      />
+                                      {wo.status === 'READY' && (
+                                        <IconButton 
+                                          size="small" 
+                                          onClick={() => dispatch(manufacturingActions.startWorkOrder({ moId: order.id, woId: wo.id }))}
+                                          color="primary"
+                                          sx={{ p: 0.25 }}
+                                        >
+                                          <StartIcon sx={{ fontSize: 12 }} />
+                                        </IconButton>
+                                      )}
+                                      {wo.status === 'IN_PROGRESS' && (
+                                        <IconButton 
+                                          size="small" 
+                                          onClick={() => dispatch(manufacturingActions.completeWorkOrder({ moId: order.id, woId: wo.id }))}
+                                          color="success"
+                                          sx={{ p: 0.25 }}
+                                        >
+                                          <DoneIcon sx={{ fontSize: 12 }} />
+                                        </IconButton>
+                                      )}
+                                    </Stack>
+                                  </Stack>
+                                ))}
+                              </Stack>
+                            </Box>
+                          )}
                         </CardContent>
                       </Card>
                     ))

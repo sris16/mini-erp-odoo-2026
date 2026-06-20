@@ -11,10 +11,16 @@ import {
   Paper,
   Chip,
 } from '@mui/material';
-import { useAppSelector } from '../../store';
+import { useEffect } from 'react';
+import { useAppSelector, useAppDispatch, auditLogsActions } from '../../store';
 
 export default function AuditLogs() {
+  const dispatch = useAppDispatch();
   const logs = useAppSelector((state) => state.auditLogs.logs);
+
+  useEffect(() => {
+    dispatch(auditLogsActions.fetchAuditLogs());
+  }, [dispatch]);
 
   const getModuleColor = (module: string) => {
     switch (module) {

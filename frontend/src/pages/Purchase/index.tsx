@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -38,8 +38,8 @@ import {
   useAppDispatch,
   useAppSelector,
   purchaseActions,
-  auditLogsActions,
-  inventoryActions,
+  productsActions,
+  vendorsActions,
   type PurchaseOrder,
 } from '../../store';
 
@@ -64,6 +64,12 @@ export default function Purchase() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    dispatch(purchaseActions.fetchPurchaseOrders());
+    dispatch(productsActions.fetchProducts());
+    dispatch(vendorsActions.fetchVendors());
+  }, [dispatch]);
 
   const {
     control,
@@ -113,49 +119,14 @@ export default function Purchase() {
       })
     );
 
-    dispatch(
-      auditLogsActions.addAuditLog({
-        user: 'Admin',
-        action: `Created Purchase Order (Vendor: ${data.vendorName}, Product: ${data.productName})`,
-        module: 'Purchase',
-      })
-    );
-
     setOpen(false);
   };
 
   const handleApprove = (row: PurchaseOrder) => {
-    const nextStatus = row.status === 'Draft' ? 'Approved' : 'Received';
-    dispatch(purchaseActions.updatePurchaseOrderStatus({ poNumber: row.poNumber, status: nextStatus }));
-
-    dispatch(
-      auditLogsActions.addAuditLog({
-        user: 'Admin',
-        action: `Advanced status of Purchase Order ${row.poNumber} to ${nextStatus}`,
-        module: 'Purchase',
-      })
-    );
-
-    // If advanced to Received, add stock ledger entry and update stock balance
-    if (nextStatus === 'Received') {
-      const prod = products.find((p) => p.name === row.productName);
-      if (prod) {
-        dispatch(
-          inventoryActions.updateStock({
-            productId: prod.id,
-            change: row.quantity,
-          })
-        );
-        dispatch(
-          inventoryActions.addLedgerEntry({
-            date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-            productName: row.productName,
-            movementType: 'IN (Purchased)',
-            quantity: row.quantity,
-            reference: row.poNumber,
-          })
-        );
-      }
+    if (row.status === 'Draft') {
+      dispatch(purchaseActions.confirmPurchaseOrder(row.id));
+    } else if (row.status === 'Approved') {
+      dispatch(purchaseActions.receivePurchaseOrder(row.id));
     }
   };
 

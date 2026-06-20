@@ -25,6 +25,8 @@ public class DataSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final StockLedgerService stockLedgerService;
     private final SalesOrderService salesOrderService;
+    private final CustomerRepository customerRepository;
+    private final VendorRepository vendorRepository;
 
     public DataSeeder(UserRepository userRepository,
                       ProductRepository productRepository,
@@ -34,7 +36,9 @@ public class DataSeeder implements CommandLineRunner {
                       BomOperationRepository bomOperationRepository,
                       PasswordEncoder passwordEncoder,
                       StockLedgerService stockLedgerService,
-                      SalesOrderService salesOrderService) {
+                      SalesOrderService salesOrderService,
+                      CustomerRepository customerRepository,
+                      VendorRepository vendorRepository) {
         this.userRepository = userRepository;
         this.productRepository = productRepository;
         this.workCenterRepository = workCenterRepository;
@@ -44,6 +48,8 @@ public class DataSeeder implements CommandLineRunner {
         this.passwordEncoder = passwordEncoder;
         this.stockLedgerService = stockLedgerService;
         this.salesOrderService = salesOrderService;
+        this.customerRepository = customerRepository;
+        this.vendorRepository = vendorRepository;
     }
 
     @Override
@@ -51,6 +57,12 @@ public class DataSeeder implements CommandLineRunner {
     public void run(String... args) throws Exception {
         if (userRepository.count() == 0) {
             seedUsers();
+        }
+        if (customerRepository.count() == 0) {
+            seedCustomers();
+        }
+        if (vendorRepository.count() == 0) {
+            seedVendors();
         }
         if (productRepository.count() == 0) {
             seedMasterDataAndTransactions();
@@ -271,5 +283,37 @@ public class DataSeeder implements CommandLineRunner {
         salesOrderService.confirmSalesOrder(savedSo2.getId());
 
         System.out.println(">>> Demo transactions seeded successfully. Confirmed SO-2 triggered draft MO dynamic generation.");
+    }
+
+    private void seedCustomers() {
+        customerRepository.save(Customer.builder()
+                .name("John Doe")
+                .phone("+1 555-0199")
+                .email("john@example.com")
+                .address("123 Timber Lane, Oregon")
+                .build());
+        customerRepository.save(Customer.builder()
+                .name("Jane Smith")
+                .phone("+1 555-0144")
+                .email("jane@example.com")
+                .address("456 Forest Road, Seattle")
+                .build());
+        System.out.println(">>> Seeded default customers.");
+    }
+
+    private void seedVendors() {
+        vendorRepository.save(Vendor.builder()
+                .name("Oakland Lumber Supplies")
+                .phone("+1 800-LUMBER")
+                .email("sales@oaklandlumber.com")
+                .address("789 Redwood Blvd, California")
+                .build());
+        vendorRepository.save(Vendor.builder()
+                .name("Fastener Depot")
+                .phone("+1 800-SCREWS")
+                .email("info@fastenerdepot.com")
+                .address("321 Hardware Ave, Ohio")
+                .build());
+        System.out.println(">>> Seeded default vendors.");
     }
 }

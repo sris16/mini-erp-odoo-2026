@@ -20,11 +20,17 @@ import {
   ListAlt as LedgerIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
-import { useAppSelector } from '../../store';
+import { useEffect } from 'react';
+import { useAppSelector, useAppDispatch, inventoryActions } from '../../store';
 
 export default function Inventory() {
   const [tabValue, setTabValue] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    dispatch(inventoryActions.fetchStockAndLedger());
+  }, [dispatch]);
 
   const { stock, ledger } = useAppSelector((state) => state.inventory);
 

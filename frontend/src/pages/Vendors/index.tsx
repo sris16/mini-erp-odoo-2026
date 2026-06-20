@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -34,7 +34,6 @@ import {
   useAppDispatch,
   useAppSelector,
   vendorsActions,
-  auditLogsActions,
   type Vendor,
 } from '../../store';
 
@@ -50,6 +49,10 @@ type VendorFormData = yup.InferType<typeof schema>;
 export default function Vendors() {
   const dispatch = useAppDispatch();
   const vendors = useAppSelector((state) => state.vendors.items);
+
+  useEffect(() => {
+    dispatch(vendorsActions.fetchVendors());
+  }, [dispatch]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
@@ -96,13 +99,6 @@ export default function Vendors() {
   const handleDelete = (id: number, name: string) => {
     if (window.confirm(`Are you sure you want to delete vendor ${name}?`)) {
       dispatch(vendorsActions.deleteVendor(id));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Deleted Vendor ${name}`,
-          module: 'Purchase',
-        })
-      );
     }
   };
 
@@ -113,22 +109,8 @@ export default function Vendors() {
   const onSubmit = (data: VendorFormData) => {
     if (editingVendor) {
       dispatch(vendorsActions.editVendor({ id: editingVendor.id, ...data } as Vendor));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Updated Vendor ${data.name}`,
-          module: 'Purchase',
-        })
-      );
     } else {
       dispatch(vendorsActions.addVendor(data as Omit<Vendor, 'id'>));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Created Vendor ${data.name}`,
-          module: 'Purchase',
-        })
-      );
     }
     setOpen(false);
   };

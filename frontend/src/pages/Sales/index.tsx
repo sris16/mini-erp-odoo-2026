@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -38,8 +38,8 @@ import {
   useAppDispatch,
   useAppSelector,
   salesActions,
-  auditLogsActions,
-  inventoryActions,
+  productsActions,
+  customersActions,
   type SalesOrder,
 } from '../../store';
 
@@ -64,6 +64,12 @@ export default function Sales() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    dispatch(salesActions.fetchSalesOrders());
+    dispatch(productsActions.fetchProducts());
+    dispatch(customersActions.fetchCustomers());
+  }, [dispatch]);
 
   const {
     control,
@@ -103,7 +109,6 @@ export default function Sales() {
   const onSubmit = (data: SalesOrderFormData) => {
     const totalVal = currentProduct ? currentProduct.salesPrice * data.quantity : 0;
     
-    // Add SO
     dispatch(
       salesActions.addSalesOrder({
         customerName: data.customerName,
@@ -114,51 +119,14 @@ export default function Sales() {
       })
     );
 
-    dispatch(
-      auditLogsActions.addAuditLog({
-        user: 'Admin',
-        action: `Created Sales Order (Customer: ${data.customerName}, Product: ${data.productName})`,
-        module: 'Sales',
-      })
-    );
-
     setOpen(false);
   };
 
   const handleApprove = (row: SalesOrder) => {
-    // Approve and update status in-memory
-    const nextStatus = row.status === 'Draft' ? 'Pending Delivery' : 'Completed';
-    dispatch(salesActions.updateSalesOrderStatus({ soNumber: row.soNumber, status: nextStatus }));
-
-    // Log the adjustment
-    dispatch(
-      auditLogsActions.addAuditLog({
-        user: 'Admin',
-        action: `Advanced status of Sales Order ${row.soNumber} to ${nextStatus}`,
-        module: 'Sales',
-      })
-    );
-
-    // If advanced to completed, update mock stock ledger & inventory balance
-    if (nextStatus === 'Completed' && currentProduct) {
-      const prod = products.find((p) => p.name === row.productName);
-      if (prod) {
-        dispatch(
-          inventoryActions.updateStock({
-            productId: prod.id,
-            change: -row.quantity,
-          })
-        );
-        dispatch(
-          inventoryActions.addLedgerEntry({
-            date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-            productName: row.productName,
-            movementType: 'OUT (Sales)',
-            quantity: row.quantity,
-            reference: row.soNumber,
-          })
-        );
-      }
+    if (row.status === 'Draft') {
+      dispatch(salesActions.confirmSalesOrder(row.id));
+    } else if (row.status === 'Pending Delivery') {
+      dispatch(salesActions.deliverSalesOrder(row.id));
     }
   };
 

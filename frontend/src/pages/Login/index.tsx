@@ -17,13 +17,12 @@ import {
   Avatar,
 } from '@mui/material';
 import { Visibility, VisibilityOff, LockOutlined } from '@mui/icons-material';
-import { useAppDispatch, authActions } from '../../store';
+import { useAppDispatch, loginThunk } from '../../store';
 
 const schema = yup.object().shape({
-  email: yup
+  username: yup
     .string()
-    .required('Email is required')
-    .email('Please enter a valid email address'),
+    .required('Username is required'),
   password: yup
     .string()
     .required('Password is required')
@@ -48,25 +47,26 @@ export default function Login() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: yupResolver(schema) as any,
     defaultValues: {
-      email: 'admin@shivfurniture.com',
-      password: 'admin',
+      username: 'admin',
+      password: 'admin123',
     },
   });
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     setError(null);
-    
-    // Simulate brief latency for login validation
-    setTimeout(() => {
-      if (data.email === 'admin@shivfurniture.com' && data.password === 'admin') {
-        dispatch(authActions.login({ token: 'dummy' }));
+    try {
+      const resultAction = await dispatch(loginThunk(data));
+      if (loginThunk.fulfilled.match(resultAction)) {
         navigate('/dashboard');
       } else {
-        setError('Invalid credentials. Use admin@shivfurniture.com / admin');
+        setError((resultAction.payload as string) || 'Invalid credentials. Use admin / admin123');
         setLoading(false);
       }
-    }, 1000);
+    } catch (err) {
+      setError('An unexpected connection error occurred.');
+      setLoading(false);
+    }
   };
 
   return (
@@ -123,11 +123,11 @@ export default function Login() {
 
           <form onSubmit={handleSubmit(onSubmit)}>
             <TextField
-              {...register('email')}
+              {...register('username')}
               fullWidth
-              label="Email Address"
-              error={!!errors.email}
-              helperText={errors.email?.message}
+              label="Username"
+              error={!!errors.username}
+              helperText={errors.username?.message}
               sx={{ mb: 3 }}
               slotProps={{
                 inputLabel: {
@@ -187,7 +187,7 @@ export default function Login() {
       </Card>
 
       <Typography variant="caption" color="text.secondary" sx={{ mt: 3 }}>
-        Default credentials: <strong>admin@shivfurniture.com</strong> / <strong>admin</strong>
+        Default credentials: <strong>admin</strong> / <strong>admin123</strong>
       </Typography>
     </Box>
   );

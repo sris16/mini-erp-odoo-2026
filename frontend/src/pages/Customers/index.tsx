@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -34,7 +34,6 @@ import {
   useAppDispatch,
   useAppSelector,
   customersActions,
-  auditLogsActions,
   type Customer,
 } from '../../store';
 
@@ -50,6 +49,10 @@ type CustomerFormData = yup.InferType<typeof schema>;
 export default function Customers() {
   const dispatch = useAppDispatch();
   const customers = useAppSelector((state) => state.customers.items);
+
+  useEffect(() => {
+    dispatch(customersActions.fetchCustomers());
+  }, [dispatch]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
@@ -96,13 +99,6 @@ export default function Customers() {
   const handleDelete = (id: number, name: string) => {
     if (window.confirm(`Are you sure you want to delete customer ${name}?`)) {
       dispatch(customersActions.deleteCustomer(id));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Deleted Customer ${name}`,
-          module: 'CRM',
-        })
-      );
     }
   };
 
@@ -113,22 +109,8 @@ export default function Customers() {
   const onSubmit = (data: CustomerFormData) => {
     if (editingCustomer) {
       dispatch(customersActions.editCustomer({ id: editingCustomer.id, ...data } as Customer));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Updated Customer ${data.name}`,
-          module: 'CRM',
-        })
-      );
     } else {
       dispatch(customersActions.addCustomer(data as Omit<Customer, 'id'>));
-      dispatch(
-        auditLogsActions.addAuditLog({
-          user: 'Admin',
-          action: `Created Customer ${data.name}`,
-          module: 'CRM',
-        })
-      );
     }
     setOpen(false);
   };
