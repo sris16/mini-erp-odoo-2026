@@ -37,11 +37,14 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Autorenew as RuleIcon,
+  Store as LocationIcon,
+  SwapHoriz as TransferIcon,
+  CheckCircle as CompleteIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { useAppSelector, useAppDispatch, inventoryActions, reorderingRulesActions, productsActions } from '../../store';
+import { useAppSelector, useAppDispatch, inventoryActions, reorderingRulesActions, productsActions, locationsActions } from '../../store';
 
 const ruleSchema = yup.object().shape({
   productId: yup.number().typeError('Product is required').required('Product is required'),
@@ -67,16 +70,21 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
 
   const dispatch = useAppDispatch();
   const { stock, ledger } = useAppSelector((state) => state.inventory);
   const reorderingRules = useAppSelector((state) => state.reorderingRules.items);
   const products = useAppSelector((state) => state.products.items);
+  const { locations, stocks: locationStocks, transfers } = useAppSelector((state) => state.locations);
 
   useEffect(() => {
     dispatch(inventoryActions.fetchStockAndLedger());
     dispatch(reorderingRulesActions.fetchReorderingRules());
     dispatch(productsActions.fetchProducts());
+    dispatch(locationsActions.fetchLocations());
+    dispatch(locationsActions.fetchLocationStocks());
+    dispatch(locationsActions.fetchTransfers());
   }, [dispatch]);
 
   const {
@@ -91,6 +99,53 @@ export default function Inventory() {
       productId: undefined,
       minQty: 10,
       maxQty: 100,
+    },
+  });
+
+  const transferSchema = yup.object().shape({
+    productId: yup.number().typeError('Product is required').required('Product is required'),
+    sourceLocationId: yup.number().typeError('Source Location is required').required('Source Location is required'),
+    destinationLocationId: yup
+      .number()
+      .typeError('Destination Location is required')
+      .required('Destination Location is required')
+      .notOneOf([yup.ref('sourceLocationId')], 'Source and Destination locations must be different'),
+    qty: yup
+      .number()
+      .typeError('Quantity must be a number')
+      .required('Quantity is required')
+      .positive('Quantity must be positive')
+      .integer()
+      .test(
+        'stock-check',
+        'Insufficient available stock at source location',
+        function (value) {
+          const { productId, sourceLocationId } = this.parent;
+          if (!productId || !sourceLocationId || !value) return true;
+          const ls = locationStocks.find(
+            (s) => s.product.id === productId && s.location.id === sourceLocationId
+          );
+          const available = ls ? ls.onHandQty - ls.reservedQty : 0;
+          return value <= available;
+        }
+      ),
+  });
+
+  type TransferFormData = yup.InferType<typeof transferSchema>;
+
+  const {
+    control: transferControl,
+    handleSubmit: handleTransferSubmit,
+    reset: resetTransfer,
+    formState: { errors: transferErrors },
+  } = useForm<TransferFormData>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: yupResolver(transferSchema) as any,
+    defaultValues: {
+      productId: undefined,
+      sourceLocationId: undefined,
+      destinationLocationId: undefined,
+      qty: 1,
     },
   });
 
@@ -160,6 +215,46 @@ export default function Inventory() {
     });
   };
 
+  const handleOpenTransferCreate = () => {
+    resetTransfer({
+      productId: undefined,
+      sourceLocationId: undefined,
+      destinationLocationId: undefined,
+      qty: 1,
+    });
+    setTransferDialogOpen(true);
+  };
+
+  const handleCloseTransferDialog = () => {
+    setTransferDialogOpen(false);
+  };
+
+  const onTransferSubmit = (data: TransferFormData) => {
+    dispatch(
+      locationsActions.createTransfer({
+        productId: Number(data.productId),
+        qty: Number(data.qty),
+        sourceLocationId: Number(data.sourceLocationId),
+        destinationLocationId: Number(data.destinationLocationId),
+      })
+    ).then(() => {
+      dispatch(locationsActions.fetchTransfers());
+      dispatch(locationsActions.fetchLocationStocks());
+      dispatch(inventoryActions.fetchStockAndLedger());
+    });
+    setTransferDialogOpen(false);
+  };
+
+  const handleCompleteTransfer = (id: number) => {
+    if (window.confirm('Are you sure you want to complete this stock transfer?')) {
+      dispatch(locationsActions.completeTransfer(id)).then(() => {
+        dispatch(locationsActions.fetchTransfers());
+        dispatch(locationsActions.fetchLocationStocks());
+        dispatch(inventoryActions.fetchStockAndLedger());
+      });
+    }
+  };
+
   const filteredStock = stock.filter((s) =>
     s.productName.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -172,6 +267,11 @@ export default function Inventory() {
 
   const filteredRules = reorderingRules.filter((r) =>
     r.productName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredTransfers = transfers.filter((t) =>
+    t.product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.transferNumber.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Products available to assign rules (not already mapped, except when editing)
@@ -211,6 +311,15 @@ export default function Inventory() {
             </Button>
           </Stack>
         )}
+        {tabValue === 4 && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleOpenTransferCreate}
+          >
+            New Transfer
+          </Button>
+        )}
       </Stack>
 
       {/* Tabs */}
@@ -219,6 +328,8 @@ export default function Inventory() {
           <Tab icon={<StockIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Stock View" />
           <Tab icon={<LedgerIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Ledger View" />
           <Tab icon={<RuleIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Reordering Rules" />
+          <Tab icon={<LocationIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Warehouse Locations" />
+          <Tab icon={<TransferIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Stock Transfers" />
         </Tabs>
       </Box>
 
@@ -230,7 +341,11 @@ export default function Inventory() {
               ? 'Search stock by product...'
               : tabValue === 1
               ? 'Search ledger by product, reference, or type...'
-              : 'Search rules by product...'
+              : tabValue === 2
+              ? 'Search rules by product...'
+              : tabValue === 3
+              ? 'Search location stocks by product...'
+              : 'Search transfers by product or reference...'
           }
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -383,6 +498,164 @@ export default function Inventory() {
         </Card>
       )}
 
+      {tabValue === 3 && (
+        <Box>
+          {/* Location Summary Cards */}
+          <Stack direction="row" spacing={3} sx={{ mb: 4, flexWrap: 'wrap', gap: 2 }}>
+            {locations.map((loc) => {
+              const uniqueItemsCount = locationStocks.filter(
+                (s) => s.location.id === loc.id && s.onHandQty > 0
+              ).length;
+              return (
+                <Card key={loc.id} sx={{ p: 3, flex: '1 1 250px', borderColor: 'divider' }}>
+                  <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+                    <LocationIcon color="primary" sx={{ fontSize: 32 }} />
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        {loc.code}
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        {loc.name}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        <strong>{uniqueItemsCount}</strong> distinct products stocked
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </Card>
+              );
+            })}
+          </Stack>
+
+          {/* Product Stock Distribution Pivot Table */}
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+            Product Stock Distribution
+          </Typography>
+          <Card sx={{ borderColor: 'divider' }}>
+            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Product</TableCell>
+                    <TableCell>SKU</TableCell>
+                    {locations.map((loc) => (
+                      <TableCell key={loc.id} align="right">
+                        {loc.name}
+                      </TableCell>
+                    ))}
+                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>Total Global</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {products.map((p) => (
+                    <TableRow key={p.id} hover>
+                      <TableCell sx={{ fontWeight: 500 }}>{p.name}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{p.sku}</TableCell>
+                      {locations.map((loc) => {
+                        const ls = locationStocks.find(
+                          (s) => s.product.id === p.id && s.location.id === loc.id
+                        );
+                        const onHand = ls ? ls.onHandQty : 0;
+                        const reserved = ls ? ls.reservedQty : 0;
+                        return (
+                          <TableCell key={loc.id} align="right">
+                            <Box>
+                              <span style={{ fontWeight: onHand > 0 ? 600 : 'normal' }}>
+                                {onHand} units
+                              </span>
+                              {reserved > 0 && (
+                                <span style={{ fontSize: '0.8rem', color: 'orange', marginLeft: 4 }}>
+                                  ({reserved} res)
+                                </span>
+                              )}
+                            </Box>
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                        {p.onHandQty} units
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
+        </Box>
+      )}
+
+      {tabValue === 4 && (
+        <Card sx={{ borderColor: 'divider' }}>
+          <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Transfer #</TableCell>
+                  <TableCell>Product</TableCell>
+                  <TableCell align="right">Quantity</TableCell>
+                  <TableCell>Source Location</TableCell>
+                  <TableCell>Destination Location</TableCell>
+                  <TableCell>Created Date</TableCell>
+                  <TableCell>Completed Date</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell align="center">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredTransfers.length > 0 ? (
+                  filteredTransfers.map((row) => (
+                    <TableRow key={row.id} hover>
+                      <TableCell sx={{ fontWeight: 500, fontFamily: 'monospace' }}>
+                        {row.transferNumber}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 500 }}>
+                        {row.product.name}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>
+                        {row.qty} units
+                      </TableCell>
+                      <TableCell>{row.sourceLocation.name}</TableCell>
+                      <TableCell>{row.destinationLocation.name}</TableCell>
+                      <TableCell sx={{ color: 'text.secondary' }}>{row.createdDate}</TableCell>
+                      <TableCell sx={{ color: 'text.secondary' }}>
+                        {row.completedDate || '-'}
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={row.status}
+                          size="small"
+                          color={row.status === 'COMPLETED' ? 'success' : 'default'}
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        {row.status === 'DRAFT' && (
+                          <Tooltip title="Complete Transfer">
+                            <IconButton
+                              size="small"
+                              color="success"
+                              onClick={() => handleCompleteTransfer(row.id)}
+                            >
+                              <CompleteIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
+                      <Typography color="text.secondary">No stock transfers found.</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
+      )}
+
       {/* Create / Edit Rule Dialog */}
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>
@@ -453,6 +726,114 @@ export default function Inventory() {
             </Button>
             <Button type="submit" variant="contained">
               Save Rule
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
+
+      {/* New Stock Transfer Dialog */}
+      <Dialog open={transferDialogOpen} onClose={handleCloseTransferDialog} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>Create Internal Stock Transfer</DialogTitle>
+        <Divider />
+        <form onSubmit={handleTransferSubmit(onTransferSubmit)}>
+          <DialogContent>
+            <Stack spacing={3} sx={{ mt: 1 }}>
+              {/* Product */}
+              <FormControl fullWidth error={!!transferErrors.productId}>
+                <InputLabel shrink>Product</InputLabel>
+                <Controller
+                  name="productId"
+                  control={transferControl}
+                  render={({ field }) => (
+                    <Select {...field} label="Product" displayEmpty>
+                      <MenuItem value="" disabled>Select product to transfer</MenuItem>
+                      {products.map((p) => (
+                        <MenuItem key={p.id} value={p.id}>
+                          {p.name} ({p.sku})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
+                />
+                {transferErrors.productId && (
+                  <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                    {String(transferErrors.productId.message)}
+                  </Typography>
+                )}
+              </FormControl>
+
+              {/* Source Location */}
+              <FormControl fullWidth error={!!transferErrors.sourceLocationId}>
+                <InputLabel shrink>Source Location</InputLabel>
+                <Controller
+                  name="sourceLocationId"
+                  control={transferControl}
+                  render={({ field }) => (
+                    <Select {...field} label="Source Location" displayEmpty>
+                      <MenuItem value="" disabled>Select source location</MenuItem>
+                      {locations.map((loc) => (
+                        <MenuItem key={loc.id} value={loc.id}>
+                          {loc.name} ({loc.code})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
+                />
+                {transferErrors.sourceLocationId && (
+                  <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                    {String(transferErrors.sourceLocationId.message)}
+                  </Typography>
+                )}
+              </FormControl>
+
+              {/* Destination Location */}
+              <FormControl fullWidth error={!!transferErrors.destinationLocationId}>
+                <InputLabel shrink>Destination Location</InputLabel>
+                <Controller
+                  name="destinationLocationId"
+                  control={transferControl}
+                  render={({ field }) => (
+                    <Select {...field} label="Destination Location" displayEmpty>
+                      <MenuItem value="" disabled>Select destination location</MenuItem>
+                      {locations.map((loc) => (
+                        <MenuItem key={loc.id} value={loc.id}>
+                          {loc.name} ({loc.code})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
+                />
+                {transferErrors.destinationLocationId && (
+                  <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                    {String(transferErrors.destinationLocationId.message)}
+                  </Typography>
+                )}
+              </FormControl>
+
+              {/* Quantity */}
+              <Controller
+                name="qty"
+                control={transferControl}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Transfer Quantity"
+                    type="number"
+                    fullWidth
+                    error={!!transferErrors.qty}
+                    helperText={transferErrors.qty ? String(transferErrors.qty.message) : 'Number of units to relocate.'}
+                  />
+                )}
+              />
+            </Stack>
+          </DialogContent>
+          <Divider />
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={handleCloseTransferDialog} color="inherit">
+              Cancel
+            </Button>
+            <Button type="submit" variant="contained">
+              Create Transfer
             </Button>
           </DialogActions>
         </form>

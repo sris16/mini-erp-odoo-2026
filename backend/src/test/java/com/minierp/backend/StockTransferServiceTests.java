@@ -10,7 +10,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,9 +31,6 @@ class StockTransferServiceTests {
 
     @Autowired
     private LocationStockRepository locationStockRepository;
-
-    @Autowired
-    private StockTransferRepository stockTransferRepository;
 
     @Test
     void testStockTransferSuccess() {

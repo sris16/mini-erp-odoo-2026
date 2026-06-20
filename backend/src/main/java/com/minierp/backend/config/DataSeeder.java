@@ -116,9 +116,9 @@ public class DataSeeder implements CommandLineRunner {
         System.out.println(">>> Seeding Master Data...");
 
         // Seed Warehouse Locations
-        WarehouseLocation mainLoc = warehouseLocationRepository.save(WarehouseLocation.builder().name("Main Warehouse").code("MAIN").build());
-        WarehouseLocation rmsLoc = warehouseLocationRepository.save(WarehouseLocation.builder().name("Raw Material Shed").code("RMS").build());
-        WarehouseLocation wsfLoc = warehouseLocationRepository.save(WarehouseLocation.builder().name("Workshop Floor").code("WSF").build());
+        warehouseLocationRepository.save(WarehouseLocation.builder().name("Main Warehouse").code("MAIN").build());
+        warehouseLocationRepository.save(WarehouseLocation.builder().name("Raw Material Shed").code("RMS").build());
+        warehouseLocationRepository.save(WarehouseLocation.builder().name("Workshop Floor").code("WSF").build());
 
         // 1. Seed Work Centers
         WorkCenter cutting = workCenterRepository.save(WorkCenter.builder()
