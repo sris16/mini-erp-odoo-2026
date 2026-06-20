@@ -12,6 +12,7 @@ import Purchase from '../pages/Purchase';
 import BoM from '../pages/BoM';
 import Manufacturing from '../pages/Manufacturing';
 import AuditLogs from '../pages/AuditLogs';
+import Invoicing from '../pages/Invoicing';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -100,6 +101,14 @@ export default function AppRoutes({ darkMode, toggleDarkMode }: AppRoutesProps) 
           element={
             <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER']}>
               <Manufacturing />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="invoicing" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'SALES_USER', 'PURCHASE_USER']}>
+              <Invoicing />
             </ProtectedRoute>
           } 
         />

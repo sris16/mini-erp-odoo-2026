@@ -27,6 +27,7 @@ public class DataSeeder implements CommandLineRunner {
     private final SalesOrderService salesOrderService;
     private final CustomerRepository customerRepository;
     private final VendorRepository vendorRepository;
+    private final WarehouseLocationRepository warehouseLocationRepository;
 
     public DataSeeder(UserRepository userRepository,
                       ProductRepository productRepository,
@@ -38,7 +39,8 @@ public class DataSeeder implements CommandLineRunner {
                       StockLedgerService stockLedgerService,
                       SalesOrderService salesOrderService,
                       CustomerRepository customerRepository,
-                      VendorRepository vendorRepository) {
+                      VendorRepository vendorRepository,
+                      WarehouseLocationRepository warehouseLocationRepository) {
         this.userRepository = userRepository;
         this.productRepository = productRepository;
         this.workCenterRepository = workCenterRepository;
@@ -50,6 +52,7 @@ public class DataSeeder implements CommandLineRunner {
         this.salesOrderService = salesOrderService;
         this.customerRepository = customerRepository;
         this.vendorRepository = vendorRepository;
+        this.warehouseLocationRepository = warehouseLocationRepository;
     }
 
     @Override
@@ -112,10 +115,30 @@ public class DataSeeder implements CommandLineRunner {
     private void seedMasterDataAndTransactions() {
         System.out.println(">>> Seeding Master Data...");
 
+        // Seed Warehouse Locations
+        WarehouseLocation mainLoc = warehouseLocationRepository.save(WarehouseLocation.builder().name("Main Warehouse").code("MAIN").build());
+        WarehouseLocation rmsLoc = warehouseLocationRepository.save(WarehouseLocation.builder().name("Raw Material Shed").code("RMS").build());
+        WarehouseLocation wsfLoc = warehouseLocationRepository.save(WarehouseLocation.builder().name("Workshop Floor").code("WSF").build());
+
         // 1. Seed Work Centers
-        WorkCenter cutting = workCenterRepository.save(WorkCenter.builder().name("Cutting Station").capacity(2).build());
-        WorkCenter assembly = workCenterRepository.save(WorkCenter.builder().name("Assembly Station").capacity(3).build());
-        WorkCenter upholstery = workCenterRepository.save(WorkCenter.builder().name("Upholstery Station").capacity(2).build());
+        WorkCenter cutting = workCenterRepository.save(WorkCenter.builder()
+                .name("Cutting Station")
+                .capacity(2)
+                .laborCostPerHour(new java.math.BigDecimal("15.00"))
+                .overheadCostPerHour(new java.math.BigDecimal("5.00"))
+                .build());
+        WorkCenter assembly = workCenterRepository.save(WorkCenter.builder()
+                .name("Assembly Station")
+                .capacity(3)
+                .laborCostPerHour(new java.math.BigDecimal("20.00"))
+                .overheadCostPerHour(new java.math.BigDecimal("10.00"))
+                .build());
+        WorkCenter upholstery = workCenterRepository.save(WorkCenter.builder()
+                .name("Upholstery Station")
+                .capacity(2)
+                .laborCostPerHour(new java.math.BigDecimal("25.00"))
+                .overheadCostPerHour(new java.math.BigDecimal("12.00"))
+                .build());
 
         // 2. Seed Raw Materials (MTS, Purchase)
         Product wood = productRepository.save(Product.builder()

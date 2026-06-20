@@ -37,6 +37,7 @@ import {
   Brightness7 as LightIcon,
   Logout as LogoutIcon,
   AccountCircle as UserIcon,
+  Receipt as InvoicingIcon,
 } from '@mui/icons-material';
 
 import NotificationCenter from '../../components/common/NotificationCenter';
@@ -86,6 +87,7 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
     { text: 'Inventory', path: '/inventory', icon: <InventoryIcon /> },
     { text: 'Sales', path: '/sales', icon: <SalesIcon />, roles: ['ADMIN', 'OWNER', 'SALES_USER', 'INVENTORY_MANAGER'] },
     { text: 'Purchase', path: '/purchase', icon: <PurchaseIcon />, roles: ['ADMIN', 'OWNER', 'PURCHASE_USER', 'INVENTORY_MANAGER'] },
+    { text: 'Invoicing', path: '/invoicing', icon: <InvoicingIcon />, roles: ['ADMIN', 'OWNER', 'SALES_USER', 'PURCHASE_USER'] },
     { text: 'BoM', path: '/bom', icon: <BoMIcon />, roles: ['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER'] },
     { text: 'Manufacturing', path: '/manufacturing', icon: <MfgIcon />, roles: ['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER'] },
     { text: 'Audit Logs', path: '/audit-logs', icon: <AuditIcon />, roles: ['ADMIN', 'OWNER'] },

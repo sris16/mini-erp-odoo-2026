@@ -2,16 +2,17 @@ package com.minierp.backend.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "stock_ledger")
+@Table(name = "location_stocks", uniqueConstraints = {
+    @UniqueConstraint(columnNames = {"product_id", "location_id"})
+})
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class StockLedger {
+public class LocationStock {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,24 +23,14 @@ public class StockLedger {
     private Product product;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "location_id", nullable = true)
+    @JoinColumn(name = "location_id", nullable = false)
     private WarehouseLocation location;
 
+    @Builder.Default
     @Column(nullable = false)
-    private Integer qtyChanged;
+    private Integer onHandQty = 0;
 
-    @Enumerated(EnumType.STRING)
+    @Builder.Default
     @Column(nullable = false)
-    private StockMovementType type;
-
-    @Column(nullable = false)
-    private String sourceDocument;
-
-    @Column(nullable = false)
-    private LocalDateTime timestamp;
-
-    @PrePersist
-    protected void onCreate() {
-        timestamp = LocalDateTime.now();
-    }
+    private Integer reservedQty = 0;
 }

@@ -55,8 +55,29 @@ export default function Manufacturing() {
   const dispatch = useAppDispatch();
   const mfgOrders = useAppSelector((state) => state.manufacturing.orders);
   const products = useAppSelector((state) => state.products.items);
+  const boms = useAppSelector((state) => state.bom.items);
 
   const [open, setOpen] = useState(false);
+
+  const getComponentCost = (order: ManufacturingOrder) => {
+    const bom = boms.find((b) => b.finishedProduct === order.productName);
+    if (!bom) return 0;
+    return bom.components.reduce((sum, comp) => {
+      const compProduct = products.find((p) => p.name === comp.name);
+      const price = compProduct ? compProduct.costPrice : 0;
+      return sum + price * comp.qty * order.quantity;
+    }, 0);
+  };
+
+  const getOperationCost = (order: ManufacturingOrder) => {
+    if (!order.workOrders) return 0;
+    return order.workOrders.reduce((sum, wo) => {
+      const labor = wo.laborCostPerHour || 0;
+      const overhead = wo.overheadCostPerHour || 0;
+      const durationHours = wo.durationMinutes / 60;
+      return sum + durationHours * (labor + overhead);
+    }, 0);
+  };
 
   useEffect(() => {
     dispatch(manufacturingActions.fetchManufacturingOrders());
@@ -191,6 +212,32 @@ export default function Manufacturing() {
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                             Target Quantity: {order.quantity} units
                           </Typography>
+
+                          {(() => {
+                            const componentCost = getComponentCost(order);
+                            const operationCost = getOperationCost(order);
+                            const totalCost = componentCost + operationCost;
+                            const unitCost = order.quantity > 0 ? totalCost / order.quantity : 0;
+                            return (
+                              <Box sx={{ mt: 1.5, p: 1, bgcolor: 'action.hover', borderRadius: 1.5 }}>
+                                <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+                                  <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>Components:</Typography>
+                                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 600 }}>${componentCost.toFixed(2)}</Typography>
+                                </Stack>
+                                <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+                                  <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>Operations:</Typography>
+                                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 600 }}>${operationCost.toFixed(2)}</Typography>
+                                </Stack>
+                                <Divider sx={{ my: 0.5 }} />
+                                <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 700 }}>Est. Cost:</Typography>
+                                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 700, color: 'primary.main' }}>
+                                    ${totalCost.toFixed(2)} (${unitCost.toFixed(2)}/u)
+                                  </Typography>
+                                </Stack>
+                              </Box>
+                            );
+                          })()}
 
                           {order.workOrders && order.workOrders.length > 0 && (
                             <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed', borderColor: 'divider' }}>

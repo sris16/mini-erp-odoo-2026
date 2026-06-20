@@ -30,6 +30,7 @@ import {
   Add as AddIcon,
   CheckCircle as ApproveIcon,
   Search as SearchIcon,
+  Receipt as BillIcon,
 } from '@mui/icons-material';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -40,6 +41,7 @@ import {
   purchaseActions,
   productsActions,
   vendorsActions,
+  invoicingActions,
   type PurchaseOrder,
 } from '../../store';
 
@@ -61,6 +63,7 @@ export default function Purchase() {
   const purchaseOrders = useAppSelector((state) => state.purchase.orders);
   const vendors = useAppSelector((state) => state.vendors.items);
   const products = useAppSelector((state) => state.products.items);
+  const bills = useAppSelector((state) => state.bills.items);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
@@ -72,6 +75,7 @@ export default function Purchase() {
     dispatch(purchaseActions.fetchPurchaseOrders());
     dispatch(productsActions.fetchProducts());
     dispatch(vendorsActions.fetchVendors());
+    dispatch(invoicingActions.fetchBills());
   }, [dispatch]);
 
   const {
@@ -221,13 +225,33 @@ export default function Purchase() {
                       <Chip label={row.status} size="small" color={getStatusColor(row.status)} />
                     </TableCell>
                     <TableCell align="center">
-                      {row.status !== 'Received' && (
-                        <Tooltip title={row.status === 'Draft' ? 'Approve Purchase' : 'Receive Stock'}>
-                          <IconButton size="small" onClick={() => handleApprove(row)} color="success">
-                            <ApproveIcon sx={{ fontSize: 18 }} />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                      <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
+                        {row.status !== 'Received' && (
+                          <Tooltip title={row.status === 'Draft' ? 'Approve Purchase' : 'Receive Stock'}>
+                            <IconButton size="small" onClick={() => handleApprove(row)} color="success">
+                              <ApproveIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {row.status !== 'Draft' && row.status !== 'Cancelled' && (
+                          <Tooltip title={bills.some((bill) => bill.purchaseOrderId === row.id) ? "Bill Already Created" : "Create Bill"}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  dispatch(invoicingActions.createBillFromPO(row.id)).then(() => {
+                                    dispatch(invoicingActions.fetchBills());
+                                  });
+                                }}
+                                color="primary"
+                                disabled={bills.some((bill) => bill.purchaseOrderId === row.id)}
+                              >
+                                <BillIcon sx={{ fontSize: 18 }} />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))

@@ -86,6 +86,9 @@ export interface WorkOrder {
   sequence: number;
   qtyToProduce: number;
   status: 'READY' | 'IN_PROGRESS' | 'DONE';
+  durationMinutes: number;
+  laborCostPerHour?: number;
+  overheadCostPerHour?: number;
 }
 
 export interface ManufacturingOrder {
@@ -103,6 +106,78 @@ export interface AuditLog {
   action: string;
   module: string;
   date: string;
+}
+
+export interface InvoiceLine {
+  id: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  product?: {
+    name: string;
+  };
+}
+
+export interface Invoice {
+  id: number;
+  invoiceNumber: string;
+  salesOrderId?: number;
+  customerName: string;
+  status: string; // DRAFT, POSTED, PAID, CANCELLED
+  issueDate: string;
+  totalAmount: number;
+  amountPaid: number;
+  lines: InvoiceLine[];
+}
+
+export interface VendorBillLine {
+  id: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  product?: {
+    name: string;
+  };
+}
+
+export interface VendorBill {
+  id: number;
+  billNumber: string;
+  purchaseOrderId?: number;
+  vendorName: string;
+  status: string; // DRAFT, POSTED, PAID, CANCELLED
+  issueDate: string;
+  totalAmount: number;
+  amountPaid: number;
+  lines: VendorBillLine[];
+}
+
+export interface WarehouseLocation {
+  id: number;
+  name: string;
+  code: string;
+}
+
+export interface LocationStock {
+  id: number;
+  product: Product;
+  location: WarehouseLocation;
+  onHandQty: number;
+  reservedQty: number;
+}
+
+export interface StockTransfer {
+  id: number;
+  transferNumber: string;
+  product: Product;
+  qty: number;
+  sourceLocation: WarehouseLocation;
+  destinationLocation: WarehouseLocation;
+  status: 'DRAFT' | 'COMPLETED' | 'CANCELLED';
+  createdDate: string;
+  completedDate?: string;
 }
 
 export interface ReorderingRule {
@@ -207,10 +282,13 @@ export interface ApiWorkOrder {
   id: number;
   workCenter?: {
     name: string;
+    laborCostPerHour?: number;
+    overheadCostPerHour?: number;
   };
   sequence: number;
   qtyToProduce: number;
   status: 'READY' | 'IN_PROGRESS' | 'DONE';
+  durationMinutes?: number;
 }
 
 export interface ApiManufacturingOrder {
@@ -524,6 +602,83 @@ export const runReorderingScheduler = createAsyncThunk('reorderingRules/run', as
   return response.data;
 });
 
+// Invoices Thunks
+export const fetchInvoices = createAsyncThunk('invoices/fetchAll', async () => {
+  const response = await api.get('/invoices');
+  return response.data;
+});
+
+export const createInvoiceFromSO = createAsyncThunk('invoices/createFromSO', async (soId: number) => {
+  const response = await api.post(`/invoices/from-so/${soId}`);
+  return response.data;
+});
+
+export const postInvoice = createAsyncThunk('invoices/post', async (id: number) => {
+  const response = await api.post(`/invoices/${id}/post`);
+  return response.data;
+});
+
+export const payInvoice = createAsyncThunk('invoices/pay', async ({ id, amount }: { id: number; amount: number }) => {
+  const response = await api.post(`/invoices/${id}/pay`, { amount });
+  return response.data;
+});
+
+// Bills Thunks
+export const fetchBills = createAsyncThunk('bills/fetchAll', async () => {
+  const response = await api.get('/bills');
+  return response.data;
+});
+
+export const createBillFromPO = createAsyncThunk('bills/createFromPO', async (poId: number) => {
+  const response = await api.post(`/bills/from-po/${poId}`);
+  return response.data;
+});
+
+export const postBill = createAsyncThunk('bills/post', async (id: number) => {
+  const response = await api.post(`/bills/${id}/post`);
+  return response.data;
+});
+
+export const payBill = createAsyncThunk('bills/pay', async ({ id, amount }: { id: number; amount: number }) => {
+  const response = await api.post(`/bills/${id}/pay`, { amount });
+  return response.data;
+});
+
+// Locations & Transfers Thunks
+export const fetchLocations = createAsyncThunk('locations/fetchAll', async () => {
+  const response = await api.get('/locations');
+  return response.data;
+});
+
+export const fetchLocationStocks = createAsyncThunk('locations/fetchStock', async () => {
+  const response = await api.get('/locations/stock');
+  return response.data;
+});
+
+export const fetchTransfers = createAsyncThunk('locations/fetchTransfers', async () => {
+  const response = await api.get('/transfers');
+  return response.data;
+});
+
+export const createTransfer = createAsyncThunk(
+  'locations/createTransfer',
+  async (transfer: { productId: number; qty: number; sourceLocationId: number; destinationLocationId: number }) => {
+    const payload = {
+      product: { id: transfer.productId },
+      qty: transfer.qty,
+      sourceLocation: { id: transfer.sourceLocationId },
+      destinationLocation: { id: transfer.destinationLocationId },
+    };
+    const response = await api.post('/transfers', payload);
+    return response.data;
+  }
+);
+
+export const completeTransfer = createAsyncThunk('locations/completeTransfer', async (id: number) => {
+  const response = await api.post(`/transfers/${id}/complete`);
+  return response.data;
+});
+
 // ================= SLICES =================
 
 // Auth Slice
@@ -833,6 +988,9 @@ const mapManufacturingOrder = (mo: ApiManufacturingOrder): ManufacturingOrder =>
     sequence: wo.sequence,
     qtyToProduce: wo.qtyToProduce,
     status: wo.status,
+    durationMinutes: wo.durationMinutes || 0,
+    laborCostPerHour: wo.workCenter?.laborCostPerHour || 0,
+    overheadCostPerHour: wo.workCenter?.overheadCostPerHour || 0,
   }));
 
   return {
@@ -991,6 +1149,144 @@ const reorderingRulesSlice = createSlice({
   },
 });
 
+// Invoices Slice
+interface InvoicesState {
+  items: Invoice[];
+  loading: boolean;
+}
+const invoicesSlice = createSlice({
+  name: 'invoices',
+  initialState: { items: [], loading: false } as InvoicesState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder.addCase(fetchInvoices.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(fetchInvoices.fulfilled, (state, action) => {
+      state.loading = false;
+      state.items = action.payload.map((inv: any) => ({
+        ...inv,
+        invoiceNumber: inv.invoiceNumber || `INV-00${inv.id}`,
+        lines: inv.lines.map((l: any) => ({
+          ...l,
+          productName: l.product?.name || l.productName || 'N/A',
+        })),
+      }));
+    });
+    builder.addCase(fetchInvoices.rejected, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(createInvoiceFromSO.fulfilled, (state, action) => {
+      const inv = action.payload;
+      state.items.unshift({
+        ...inv,
+        invoiceNumber: inv.invoiceNumber || `INV-00${inv.id}`,
+        lines: inv.lines.map((l: any) => ({
+          ...l,
+          productName: l.product?.name || l.productName || 'N/A',
+        })),
+      });
+    });
+    builder.addCase(postInvoice.fulfilled, (state, action) => {
+      const updated = action.payload;
+      const idx = state.items.findIndex((i) => i.id === updated.id);
+      if (idx !== -1) {
+        state.items[idx] = {
+          ...updated,
+          invoiceNumber: updated.invoiceNumber || `INV-00${updated.id}`,
+          lines: updated.lines.map((l: any) => ({
+            ...l,
+            productName: l.product?.name || l.productName || 'N/A',
+          })),
+        };
+      }
+    });
+    builder.addCase(payInvoice.fulfilled, (state, action) => {
+      const updated = action.payload;
+      const idx = state.items.findIndex((i) => i.id === updated.id);
+      if (idx !== -1) {
+        state.items[idx] = {
+          ...updated,
+          invoiceNumber: updated.invoiceNumber || `INV-00${updated.id}`,
+          lines: updated.lines.map((l: any) => ({
+            ...l,
+            productName: l.product?.name || l.productName || 'N/A',
+          })),
+        };
+      }
+    });
+  },
+});
+
+// Bills Slice
+interface BillsState {
+  items: VendorBill[];
+  loading: boolean;
+}
+const billsSlice = createSlice({
+  name: 'bills',
+  initialState: { items: [], loading: false } as BillsState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder.addCase(fetchBills.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(fetchBills.fulfilled, (state, action) => {
+      state.loading = false;
+      state.items = action.payload.map((bill: any) => ({
+        ...bill,
+        billNumber: bill.billNumber || `BILL-00${bill.id}`,
+        lines: bill.lines.map((l: any) => ({
+          ...l,
+          productName: l.product?.name || l.productName || 'N/A',
+        })),
+      }));
+    });
+    builder.addCase(fetchBills.rejected, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(createBillFromPO.fulfilled, (state, action) => {
+      const bill = action.payload;
+      state.items.unshift({
+        ...bill,
+        billNumber: bill.billNumber || `BILL-00${bill.id}`,
+        lines: bill.lines.map((l: any) => ({
+          ...l,
+          productName: l.product?.name || l.productName || 'N/A',
+        })),
+      });
+    });
+    builder.addCase(postBill.fulfilled, (state, action) => {
+      const updated = action.payload;
+      const idx = state.items.findIndex((i) => i.id === updated.id);
+      if (idx !== -1) {
+        state.items[idx] = {
+          ...updated,
+          billNumber: updated.billNumber || `BILL-00${updated.id}`,
+          lines: updated.lines.map((l: any) => ({
+            ...l,
+            productName: l.product?.name || l.productName || 'N/A',
+          })),
+        };
+      }
+    });
+    builder.addCase(payBill.fulfilled, (state, action) => {
+      const updated = action.payload;
+      const idx = state.items.findIndex((i) => i.id === updated.id);
+      if (idx !== -1) {
+        state.items[idx] = {
+          ...updated,
+          billNumber: updated.billNumber || `BILL-00${updated.id}`,
+          lines: updated.lines.map((l: any) => ({
+            ...l,
+            productName: l.product?.name || l.productName || 'N/A',
+          })),
+        };
+      }
+    });
+  },
+});
+
 // Dashboard Thunks
 export const fetchDashboardKpis = createAsyncThunk('dashboard/fetchKpis', async () => {
   const response = await api.get('/dashboard/kpis');
@@ -1040,6 +1336,123 @@ const dashboardSlice = createSlice({
   },
 });
 
+// Locations Slice
+interface LocationsState {
+  locations: WarehouseLocation[];
+  stocks: LocationStock[];
+  transfers: StockTransfer[];
+  loading: boolean;
+}
+const initialLocationsState: LocationsState = {
+  locations: [],
+  stocks: [],
+  transfers: [],
+  loading: false,
+};
+const locationsSlice = createSlice({
+  name: 'locations',
+  initialState: initialLocationsState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder.addCase(fetchLocations.fulfilled, (state, action) => {
+      state.locations = action.payload;
+    });
+    builder.addCase(fetchLocationStocks.fulfilled, (state, action) => {
+      state.stocks = action.payload.map((s: any) => ({
+        id: s.id,
+        product: {
+          id: s.product.id,
+          name: s.product.name,
+          sku: s.product.sku,
+          costPrice: s.product.costPrice,
+          salesPrice: s.product.salesPrice,
+          onHandQty: s.product.onHandQty,
+          reservedQty: s.product.reservedQty,
+          procurementStrategy: s.product.procurementStrategy,
+          procurementType: s.product.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
+        },
+        location: s.location,
+        onHandQty: s.onHandQty,
+        reservedQty: s.reservedQty,
+      }));
+    });
+    builder.addCase(fetchTransfers.fulfilled, (state, action) => {
+      state.transfers = action.payload.map((t: any) => ({
+        id: t.id,
+        transferNumber: t.transferNumber,
+        product: {
+          id: t.product.id,
+          name: t.product.name,
+          sku: t.product.sku,
+          costPrice: t.product.costPrice,
+          salesPrice: t.product.salesPrice,
+          onHandQty: t.product.onHandQty,
+          reservedQty: t.product.reservedQty,
+          procurementStrategy: t.product.procurementStrategy,
+          procurementType: t.product.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
+        },
+        qty: t.qty,
+        sourceLocation: t.sourceLocation,
+        destinationLocation: t.destinationLocation,
+        status: t.status,
+        createdDate: t.createdDate.replace('T', ' ').substring(0, 16),
+        completedDate: t.completedDate ? t.completedDate.replace('T', ' ').substring(0, 16) : undefined,
+      }));
+    });
+    builder.addCase(createTransfer.fulfilled, (state, action) => {
+      const t = action.payload;
+      state.transfers.unshift({
+        id: t.id,
+        transferNumber: t.transferNumber,
+        product: {
+          id: t.product.id,
+          name: t.product.name,
+          sku: t.product.sku,
+          costPrice: t.product.costPrice,
+          salesPrice: t.product.salesPrice,
+          onHandQty: t.product.onHandQty,
+          reservedQty: t.product.reservedQty,
+          procurementStrategy: t.product.procurementStrategy,
+          procurementType: t.product.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
+        },
+        qty: t.qty,
+        sourceLocation: t.sourceLocation,
+        destinationLocation: t.destinationLocation,
+        status: t.status,
+        createdDate: t.createdDate.replace('T', ' ').substring(0, 16),
+        completedDate: t.completedDate ? t.completedDate.replace('T', ' ').substring(0, 16) : undefined,
+      });
+    });
+    builder.addCase(completeTransfer.fulfilled, (state, action) => {
+      const updated = action.payload;
+      const idx = state.transfers.findIndex((t) => t.id === updated.id);
+      if (idx !== -1) {
+        state.transfers[idx] = {
+          id: updated.id,
+          transferNumber: updated.transferNumber,
+          product: {
+            id: updated.product.id,
+            name: updated.product.name,
+            sku: updated.product.sku,
+            costPrice: updated.product.costPrice,
+            salesPrice: updated.product.salesPrice,
+            onHandQty: updated.product.onHandQty,
+            reservedQty: updated.product.reservedQty,
+            procurementStrategy: updated.product.procurementStrategy,
+            procurementType: updated.product.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
+          },
+          qty: updated.qty,
+          sourceLocation: updated.sourceLocation,
+          destinationLocation: updated.destinationLocation,
+          status: updated.status,
+          createdDate: updated.createdDate.replace('T', ' ').substring(0, 16),
+          completedDate: updated.completedDate ? updated.completedDate.replace('T', ' ').substring(0, 16) : undefined,
+        };
+      }
+    });
+  },
+});
+
 // ================= CONFIGURE STORE =================
 
 export const store = configureStore({
@@ -1056,6 +1469,9 @@ export const store = configureStore({
     auditLogs: auditLogsSlice.reducer,
     dashboard: dashboardSlice.reducer,
     reorderingRules: reorderingRulesSlice.reducer,
+    invoices: invoicesSlice.reducer,
+    bills: billsSlice.reducer,
+    locations: locationsSlice.reducer,
   },
 });
 
@@ -1079,3 +1495,5 @@ export const manufacturingActions = { fetchManufacturingOrders, addManufacturing
 export const auditLogsActions = { fetchAuditLogs };
 export const dashboardActions = { fetchDashboardKpis, fetchDashboardCharts };
 export const reorderingRulesActions = { fetchReorderingRules, addReorderingRule, editReorderingRule, deleteReorderingRule, runReorderingScheduler };
+export const invoicingActions = { fetchInvoices, createInvoiceFromSO, postInvoice, payInvoice, fetchBills, createBillFromPO, postBill, payBill };
+export const locationsActions = { fetchLocations, fetchLocationStocks, fetchTransfers, createTransfer, completeTransfer };

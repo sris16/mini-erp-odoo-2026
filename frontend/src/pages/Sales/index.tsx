@@ -30,6 +30,7 @@ import {
   Add as AddIcon,
   CheckCircle as ApproveIcon,
   Search as SearchIcon,
+  Receipt as InvoiceIcon,
 } from '@mui/icons-material';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -40,6 +41,7 @@ import {
   salesActions,
   productsActions,
   customersActions,
+  invoicingActions,
   type SalesOrder,
 } from '../../store';
 
@@ -61,6 +63,7 @@ export default function Sales() {
   const salesOrders = useAppSelector((state) => state.sales.orders);
   const customers = useAppSelector((state) => state.customers.items);
   const products = useAppSelector((state) => state.products.items);
+  const invoices = useAppSelector((state) => state.invoices.items);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
@@ -72,6 +75,7 @@ export default function Sales() {
     dispatch(salesActions.fetchSalesOrders());
     dispatch(productsActions.fetchProducts());
     dispatch(customersActions.fetchCustomers());
+    dispatch(invoicingActions.fetchInvoices());
   }, [dispatch]);
 
   const {
@@ -221,13 +225,33 @@ export default function Sales() {
                       <Chip label={row.status} size="small" color={getStatusColor(row.status)} />
                     </TableCell>
                     <TableCell align="center">
-                      {row.status !== 'Completed' && (
-                        <Tooltip title={row.status === 'Draft' ? 'Approve Order' : 'Ship Goods'}>
-                          <IconButton size="small" onClick={() => handleApprove(row)} color="success">
-                            <ApproveIcon sx={{ fontSize: 18 }} />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                      <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
+                        {row.status !== 'Completed' && (
+                          <Tooltip title={row.status === 'Draft' ? 'Approve Order' : 'Ship Goods'}>
+                            <IconButton size="small" onClick={() => handleApprove(row)} color="success">
+                              <ApproveIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {row.status !== 'Draft' && row.status !== 'Cancelled' && (
+                          <Tooltip title={invoices.some((inv) => inv.salesOrderId === row.id) ? "Invoice Already Created" : "Create Invoice"}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  dispatch(invoicingActions.createInvoiceFromSO(row.id)).then(() => {
+                                    dispatch(invoicingActions.fetchInvoices());
+                                  });
+                                }}
+                                color="primary"
+                                disabled={invoices.some((inv) => inv.salesOrderId === row.id)}
+                              >
+                                <InvoiceIcon sx={{ fontSize: 18 }} />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))

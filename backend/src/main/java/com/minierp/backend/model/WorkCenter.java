@@ -22,4 +22,12 @@ public class WorkCenter {
     @Builder.Default
     @Column(nullable = false)
     private Integer capacity = 1;
+
+    @Builder.Default
+    @Column(nullable = true)
+    private java.math.BigDecimal laborCostPerHour = java.math.BigDecimal.ZERO;
+
+    @Builder.Default
+    @Column(nullable = true)
+    private java.math.BigDecimal overheadCostPerHour = java.math.BigDecimal.ZERO;
 }
