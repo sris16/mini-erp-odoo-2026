@@ -31,7 +31,7 @@ import {
   CheckCircle as ApproveIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import {
@@ -64,6 +64,9 @@ export default function Purchase() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
+  const [activeReceiveOrder, setActiveReceiveOrder] = useState<PurchaseOrder | null>(null);
+  const [receiveQty, setReceiveQty] = useState<number>(0);
 
   useEffect(() => {
     dispatch(purchaseActions.fetchPurchaseOrders());
@@ -75,7 +78,6 @@ export default function Purchase() {
     control,
     handleSubmit,
     reset,
-    watch,
     formState: { errors },
   } = useForm<PurchaseOrderFormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,8 +89,8 @@ export default function Purchase() {
     },
   });
 
-  const selectedProduct = watch('productName');
-  const enteredQty = watch('quantity');
+  const selectedProduct = useWatch({ control, name: 'productName' });
+  const enteredQty = useWatch({ control, name: 'quantity' });
 
   const currentProduct = products.find((p) => p.name === selectedProduct);
   const calculatedTotal = currentProduct ? currentProduct.costPrice * (enteredQty || 0) : 0;
@@ -126,7 +128,9 @@ export default function Purchase() {
     if (row.status === 'Draft') {
       dispatch(purchaseActions.confirmPurchaseOrder(row.id));
     } else if (row.status === 'Approved') {
-      dispatch(purchaseActions.receivePurchaseOrder(row.id));
+      setActiveReceiveOrder(row);
+      setReceiveQty(row.quantity - row.qtyReceived);
+      setReceiveOpen(true);
     }
   };
 
@@ -201,7 +205,17 @@ export default function Purchase() {
                     <TableCell sx={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.poNumber}</TableCell>
                     <TableCell>{row.vendorName}</TableCell>
                     <TableCell>{row.productName}</TableCell>
-                    <TableCell align="right">{row.quantity} units</TableCell>
+                    <TableCell align="right">
+                      {row.qtyReceived > 0 && row.qtyReceived < row.quantity ? (
+                        <Tooltip title={`Received: ${row.qtyReceived} / ${row.quantity} units`}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {row.qtyReceived} / {row.quantity} units
+                          </Typography>
+                        </Tooltip>
+                      ) : (
+                        `${row.quantity} units`
+                      )}
+                    </TableCell>
                     <TableCell align="right">${row.total.toFixed(2)}</TableCell>
                     <TableCell>
                       <Chip label={row.status} size="small" color={getStatusColor(row.status)} />
@@ -315,6 +329,78 @@ export default function Purchase() {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Receive Confirmation Dialog */}
+      <Dialog open={receiveOpen} onClose={() => setReceiveOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>Receive Products</DialogTitle>
+        <Divider />
+        <DialogContent>
+          {activeReceiveOrder && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                {activeReceiveOrder.productName}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                PO Number: {activeReceiveOrder.poNumber}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Total Ordered: {activeReceiveOrder.quantity} units
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Already Received: {activeReceiveOrder.qtyReceived} units
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Remaining to Receive: {activeReceiveOrder.quantity - activeReceiveOrder.qtyReceived} units
+              </Typography>
+
+              <TextField
+                label="Quantity to Receive Now"
+                type="number"
+                fullWidth
+                value={receiveQty}
+                onChange={(e) => setReceiveQty(Math.max(1, parseInt(e.target.value) || 0))}
+                slotProps={{
+                  htmlInput: {
+                    min: 1,
+                    max: activeReceiveOrder.quantity - activeReceiveOrder.qtyReceived,
+                  }
+                }}
+              />
+            </Stack>
+          )}
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setReceiveOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (activeReceiveOrder) {
+                dispatch(
+                  purchaseActions.receivePurchaseOrder({
+                    id: activeReceiveOrder.id,
+                    partials: [
+                      {
+                        productId: activeReceiveOrder.productId,
+                        qtyToReceive: receiveQty,
+                      },
+                    ],
+                  })
+                ).then(() => {
+                  dispatch(purchaseActions.fetchPurchaseOrders());
+                });
+              }
+              setReceiveOpen(false);
+            }}
+            variant="contained"
+            color="success"
+            disabled={!activeReceiveOrder || receiveQty <= 0 || receiveQty > (activeReceiveOrder.quantity - activeReceiveOrder.qtyReceived)}
+          >
+            Confirm Receipt
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

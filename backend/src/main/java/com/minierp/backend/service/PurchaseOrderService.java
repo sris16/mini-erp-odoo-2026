@@ -5,6 +5,7 @@ import com.minierp.backend.repository.AuditLogRepository;
 import com.minierp.backend.repository.ProductRepository;
 import com.minierp.backend.repository.PurchaseOrderRepository;
 import com.minierp.backend.repository.SalesOrderRepository;
+import com.minierp.backend.dto.PartialReceiptRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -143,23 +144,61 @@ public class PurchaseOrderService {
 
     @Transactional
     public PurchaseOrder receivePurchaseOrder(Long id) {
+        return receivePurchaseOrder(id, null);
+    }
+
+    @Transactional
+    public PurchaseOrder receivePurchaseOrder(Long id, List<PartialReceiptRequest> partialReceipts) {
         PurchaseOrder po = getPurchaseOrderById(id);
 
-        if (po.getStatus() != PurchaseOrderStatus.CONFIRMED) {
-            throw new IllegalStateException("Only CONFIRMED Purchase Orders can be received");
+        if (po.getStatus() != PurchaseOrderStatus.CONFIRMED && po.getStatus() != PurchaseOrderStatus.PARTIALLY_RECEIVED) {
+            throw new IllegalStateException("Only CONFIRMED or PARTIALLY_RECEIVED Purchase Orders can be received");
         }
-
-        po.setStatus(PurchaseOrderStatus.FULLY_RECEIVED);
 
         String sourceDoc = "PO-" + id;
 
-        // 1. Receive all lines and increment physical on-hand stock
+        // 1. Receive quantities per line
         for (PurchaseOrderLine line : po.getLines()) {
             Product product = line.getProduct();
-            int qtyToReceive = line.getQtyOrdered();
+            int remaining = line.getQtyOrdered() - (line.getQtyReceived() != null ? line.getQtyReceived() : 0);
+            if (remaining <= 0) continue;
+
+            int qtyToReceive = remaining;
+            if (partialReceipts != null && !partialReceipts.isEmpty()) {
+                qtyToReceive = partialReceipts.stream()
+                        .filter(p -> p.getProductId().equals(product.getId()))
+                        .map(PartialReceiptRequest::getQtyToReceive)
+                        .findFirst()
+                        .orElse(0); // If product is not in partial list, do not receive
+            }
+
+            if (qtyToReceive <= 0) continue;
+
+            if (qtyToReceive > remaining) {
+                throw new IllegalArgumentException(String.format("Cannot receive more than remaining quantity (%d) for product %s", remaining, product.getName()));
+            }
 
             stockLedgerService.logMovement(product, qtyToReceive, StockMovementType.IN, sourceDoc);
-            line.setQtyReceived(qtyToReceive);
+            line.setQtyReceived((line.getQtyReceived() != null ? line.getQtyReceived() : 0) + qtyToReceive);
+        }
+
+        // 2. Update status
+        boolean allFullyReceived = true;
+        boolean anyReceived = false;
+        for (PurchaseOrderLine line : po.getLines()) {
+            int received = line.getQtyReceived() != null ? line.getQtyReceived() : 0;
+            if (received < line.getQtyOrdered()) {
+                allFullyReceived = false;
+            }
+            if (received > 0) {
+                anyReceived = true;
+            }
+        }
+
+        if (allFullyReceived) {
+            po.setStatus(PurchaseOrderStatus.FULLY_RECEIVED);
+        } else if (anyReceived) {
+            po.setStatus(PurchaseOrderStatus.PARTIALLY_RECEIVED);
         }
 
         PurchaseOrder receivedPo = purchaseOrderRepository.save(po);
@@ -168,11 +207,11 @@ public class PurchaseOrderService {
         AuditLog auditLog = AuditLog.builder()
                 .username(username)
                 .action("RECEIVE_PURCHASE_ORDER")
-                .details(String.format("Received Purchase Order ID %d. Incremented stock for all lines.", id))
+                .details(String.format("Processed receipt for Purchase Order ID %d. Status is now %s.", id, po.getStatus()))
                 .build();
         auditLogRepository.save(auditLog);
 
-        // 2. Trigger Scheduler Run: Reallocate reservations for all products
+        // 3. Trigger Scheduler Run: Reallocate reservations for all products
         runReservationScheduler();
 
         return receivedPo;
@@ -209,7 +248,7 @@ public class PurchaseOrderService {
         }
 
         // Find all CONFIRMED Sales Orders ordered by date (FIFO)
-        List<SalesOrder> confirmedOrders = salesOrderRepository.findAllByOrderByOrderDateDesc().stream()
+        List<SalesOrder> confirmedOrders = salesOrderRepository.findAllByOrderByOrderDateAsc().stream()
                 .filter(so -> so.getStatus() == SalesOrderStatus.CONFIRMED)
                 .toList();
 

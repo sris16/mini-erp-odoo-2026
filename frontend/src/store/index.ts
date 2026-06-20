@@ -1,30 +1,7 @@
 import { configureStore, createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { type TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
+import api from '../services/api';
 import axios from 'axios';
-
-// Configure Axios request interceptor for JWT authorization
-axios.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Configure Axios response interceptor to handle token expiry / 401 Unauthorized
-axios.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
 
 // ================= TYPES & INTERFACES =================
 
@@ -35,6 +12,7 @@ export interface Product {
   costPrice: number;
   salesPrice: number;
   onHandQty: number;
+  reservedQty: number;
   procurementStrategy: string; // MTO, MTS
   procurementType: string; // Manufactured, Purchased
 }
@@ -76,8 +54,10 @@ export interface SalesOrder {
   id: number;
   soNumber: string;
   customerName: string;
+  productId: number;
   productName: string;
   quantity: number;
+  qtyDelivered: number;
   status: string; // Draft, Pending Delivery, Completed, Cancelled
   total: number;
 }
@@ -86,8 +66,10 @@ export interface PurchaseOrder {
   id: number;
   poNumber: string;
   vendorName: string;
+  productId: number;
   productName: string;
   quantity: number;
+  qtyReceived: number;
   status: string; // Draft, Approved, Received, Cancelled
   total: number;
 }
@@ -123,6 +105,124 @@ export interface AuditLog {
   date: string;
 }
 
+export interface ReorderingRule {
+  id: number;
+  productId: number;
+  productName: string;
+  minQty: number;
+  maxQty: number;
+  lastTriggered?: string;
+}
+
+export interface ApiReorderingRule {
+  id: number;
+  product: {
+    id: number;
+    name: string;
+  };
+  minQty: number;
+  maxQty: number;
+  lastTriggered?: string;
+}
+
+export interface ApiProduct {
+  id: number;
+  name: string;
+  sku: string;
+  costPrice: number;
+  salesPrice: number;
+  onHandQty: number;
+  reservedQty?: number;
+  procurementStrategy: string;
+  procurementType: string;
+}
+
+export interface ApiStockProduct {
+  id: number;
+  name: string;
+  onHandQty: number;
+  reservedQty: number;
+}
+
+export interface ApiLedgerEntry {
+  id: number;
+  timestamp: string;
+  product?: {
+    name: string;
+  };
+  type: string;
+  qtyChanged: number;
+  sourceDocument: string;
+}
+
+export interface ApiAuditLog {
+  id: number;
+  username: string;
+  details: string;
+  action: string;
+  timestamp: string;
+}
+
+export interface ApiSalesOrderLine {
+  productId: number;
+  qtyOrdered: number;
+  qtyDelivered?: number;
+  unitPrice: number;
+  product?: {
+    name: string;
+  };
+}
+
+export interface ApiSalesOrder {
+  id: number;
+  customerName: string;
+  status: string;
+  lines: ApiSalesOrderLine[];
+}
+
+export interface ApiPurchaseOrderLine {
+  productId: number;
+  qtyOrdered: number;
+  qtyReceived?: number;
+  unitPrice: number;
+  product?: {
+    name: string;
+  };
+}
+
+export interface ApiPurchaseOrder {
+  id: number;
+  vendorName: string;
+  status: string;
+  lines: ApiPurchaseOrderLine[];
+}
+
+export interface ApiBoMItem {
+  id: number;
+  finishedProductName: string;
+  components: { name: string; qty: number }[];
+}
+
+export interface ApiWorkOrder {
+  id: number;
+  workCenter?: {
+    name: string;
+  };
+  sequence: number;
+  qtyToProduce: number;
+  status: 'READY' | 'IN_PROGRESS' | 'DONE';
+}
+
+export interface ApiManufacturingOrder {
+  id: number;
+  status: string;
+  workOrders?: ApiWorkOrder[];
+  finishedProduct?: {
+    name: string;
+  };
+  qty: number;
+}
+
 // ================= ASYNC THUNKS =================
 
 // Auth
@@ -130,17 +230,20 @@ export const loginThunk = createAsyncThunk(
   'auth/login',
   async (credentials: Record<string, unknown>, { rejectWithValue }) => {
     try {
-      const response = await axios.post('/api/v1/auth/login', credentials);
+      const response = await api.post('/auth/login', credentials);
       return response.data; // { token: "..." }
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Login failed');
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        return rejectWithValue(err.response?.data?.message || 'Login failed');
+      }
+      return rejectWithValue('Login failed');
     }
   }
 );
 
 // Products
 export const fetchProducts = createAsyncThunk('products/fetch', async () => {
-  const response = await axios.get('/api/v1/products');
+  const response = await api.get('/products');
   return response.data;
 });
 
@@ -149,7 +252,7 @@ export const addProduct = createAsyncThunk('products/add', async (product: Omit<
     ...product,
     procurementType: product.procurementType === 'Manufactured' ? 'MANUFACTURING' : 'PURCHASE',
   };
-  const response = await axios.post('/api/v1/products', payload);
+  const response = await api.post('/products', payload);
   return response.data;
 });
 
@@ -158,60 +261,60 @@ export const editProduct = createAsyncThunk('products/edit', async (product: Pro
     ...product,
     procurementType: product.procurementType === 'Manufactured' ? 'MANUFACTURING' : 'PURCHASE',
   };
-  const response = await axios.put(`/api/v1/products/${product.id}`, payload);
+  const response = await api.put(`/products/${product.id}`, payload);
   return response.data;
 });
 
 export const deleteProduct = createAsyncThunk('products/delete', async (id: number) => {
-  await axios.delete(`/api/v1/products/${id}`);
+  await api.delete(`/products/${id}`);
   return id;
 });
 
 // Customers
 export const fetchCustomers = createAsyncThunk('customers/fetch', async () => {
-  const response = await axios.get('/api/v1/customers');
+  const response = await api.get('/customers');
   return response.data;
 });
 
 export const addCustomer = createAsyncThunk('customers/add', async (customer: Omit<Customer, 'id'>) => {
-  const response = await axios.post('/api/v1/customers', customer);
+  const response = await api.post('/customers', customer);
   return response.data;
 });
 
 export const editCustomer = createAsyncThunk('customers/edit', async (customer: Customer) => {
-  const response = await axios.put(`/api/v1/customers/${customer.id}`, customer);
+  const response = await api.put(`/customers/${customer.id}`, customer);
   return response.data;
 });
 
 export const deleteCustomer = createAsyncThunk('customers/delete', async (id: number) => {
-  await axios.delete(`/api/v1/customers/${id}`);
+  await api.delete(`/customers/${id}`);
   return id;
 });
 
 // Vendors
 export const fetchVendors = createAsyncThunk('vendors/fetch', async () => {
-  const response = await axios.get('/api/v1/vendors');
+  const response = await api.get('/vendors');
   return response.data;
 });
 
 export const addVendor = createAsyncThunk('vendors/add', async (vendor: Omit<Vendor, 'id'>) => {
-  const response = await axios.post('/api/v1/vendors', vendor);
+  const response = await api.post('/vendors', vendor);
   return response.data;
 });
 
 export const editVendor = createAsyncThunk('vendors/edit', async (vendor: Vendor) => {
-  const response = await axios.put(`/api/v1/vendors/${vendor.id}`, vendor);
+  const response = await api.put(`/vendors/${vendor.id}`, vendor);
   return response.data;
 });
 
 export const deleteVendor = createAsyncThunk('vendors/delete', async (id: number) => {
-  await axios.delete(`/api/v1/vendors/${id}`);
+  await api.delete(`/vendors/${id}`);
   return id;
 });
 
 // Sales Orders
 export const fetchSalesOrders = createAsyncThunk('sales/fetch', async () => {
-  const response = await axios.get('/api/v1/sales');
+  const response = await api.get('/sales');
   return response.data;
 });
 
@@ -233,29 +336,32 @@ export const addSalesOrder = createAsyncThunk(
         },
       ],
     };
-    const response = await axios.post('/api/v1/sales', payload);
+    const response = await api.post('/sales', payload);
     return response.data;
   }
 );
 
 export const confirmSalesOrder = createAsyncThunk('sales/confirm', async (id: number) => {
-  const response = await axios.post(`/api/v1/sales/${id}/confirm`);
+  const response = await api.post(`/sales/${id}/confirm`);
   return response.data;
 });
 
-export const deliverSalesOrder = createAsyncThunk('sales/deliver', async (id: number) => {
-  const response = await axios.post(`/api/v1/sales/${id}/deliver`);
-  return response.data;
-});
+export const deliverSalesOrder = createAsyncThunk(
+  'sales/deliver',
+  async ({ id, partials }: { id: number; partials?: { productId: number; qtyToDeliver: number }[] }) => {
+    const response = await api.post(`/sales/${id}/deliver`, partials);
+    return response.data;
+  }
+);
 
 export const cancelSalesOrder = createAsyncThunk('sales/cancel', async (id: number) => {
-  const response = await axios.post(`/api/v1/sales/${id}/cancel`);
+  const response = await api.post(`/sales/${id}/cancel`);
   return response.data;
 });
 
 // Purchase Orders
 export const fetchPurchaseOrders = createAsyncThunk('purchase/fetch', async () => {
-  const response = await axios.get('/api/v1/purchase');
+  const response = await api.get('/purchase');
   return response.data;
 });
 
@@ -277,34 +383,37 @@ export const addPurchaseOrder = createAsyncThunk(
         },
       ],
     };
-    const response = await axios.post('/api/v1/purchase', payload);
+    const response = await api.post('/purchase', payload);
     return response.data;
   }
 );
 
 export const confirmPurchaseOrder = createAsyncThunk('purchase/confirm', async (id: number) => {
-  const response = await axios.post(`/api/v1/purchase/${id}/confirm`);
+  const response = await api.post(`/purchase/${id}/confirm`);
   return response.data;
 });
 
-export const receivePurchaseOrder = createAsyncThunk('purchase/receive', async (id: number) => {
-  const response = await axios.post(`/api/v1/purchase/${id}/receive`);
-  return response.data;
-});
+export const receivePurchaseOrder = createAsyncThunk(
+  'purchase/receive',
+  async ({ id, partials }: { id: number; partials?: { productId: number; qtyToReceive: number }[] }) => {
+    const response = await api.post(`/purchase/${id}/receive`, partials);
+    return response.data;
+  }
+);
 
 export const cancelPurchaseOrder = createAsyncThunk('purchase/cancel', async (id: number) => {
-  const response = await axios.post(`/api/v1/purchase/${id}/cancel`);
+  const response = await api.post(`/purchase/${id}/cancel`);
   return response.data;
 });
 
 // Bills of Materials
 export const fetchBoms = createAsyncThunk('bom/fetch', async () => {
-  const response = await axios.get('/api/v1/bom');
+  const response = await api.get('/bom');
   return response.data;
 });
 
 export const addBoM = createAsyncThunk('bom/add', async (bom: Omit<BoMItem, 'id'>) => {
-  const response = await axios.post('/api/v1/bom', {
+  const response = await api.post('/bom', {
     finishedProductName: bom.finishedProduct,
     components: bom.components,
   });
@@ -312,13 +421,13 @@ export const addBoM = createAsyncThunk('bom/add', async (bom: Omit<BoMItem, 'id'
 });
 
 export const deleteBoM = createAsyncThunk('bom/delete', async (id: number) => {
-  await axios.delete(`/api/v1/bom/${id}`);
+  await api.delete(`/bom/${id}`);
   return id;
 });
 
 // Manufacturing Orders
 export const fetchManufacturingOrders = createAsyncThunk('manufacturing/fetch', async () => {
-  const response = await axios.get('/api/v1/manufacturing');
+  const response = await api.get('/manufacturing');
   return response.data;
 });
 
@@ -334,25 +443,25 @@ export const addManufacturingOrder = createAsyncThunk(
       qty: order.quantity,
       status: 'DRAFT',
     };
-    const response = await axios.post('/api/v1/manufacturing', payload);
+    const response = await api.post('/manufacturing', payload);
     return response.data;
   }
 );
 
 export const confirmManufacturingOrder = createAsyncThunk('manufacturing/confirm', async (id: number) => {
-  const response = await axios.post(`/api/v1/manufacturing/${id}/confirm`);
+  const response = await api.post(`/manufacturing/${id}/confirm`);
   return response.data;
 });
 
 export const completeManufacturingOrder = createAsyncThunk('manufacturing/complete', async (id: number) => {
-  const response = await axios.post(`/api/v1/manufacturing/${id}/complete`);
+  const response = await api.post(`/manufacturing/${id}/complete`);
   return response.data;
 });
 
 export const startWorkOrder = createAsyncThunk(
   'manufacturing/startWork',
   async ({ moId, woId }: { moId: number; woId: number }) => {
-    const response = await axios.post(`/api/v1/manufacturing/workorders/${woId}/start`);
+    const response = await api.post(`/manufacturing/workorders/${woId}/start`);
     return { moId, workOrder: response.data };
   }
 );
@@ -360,7 +469,7 @@ export const startWorkOrder = createAsyncThunk(
 export const completeWorkOrder = createAsyncThunk(
   'manufacturing/completeWork',
   async ({ moId, woId }: { moId: number; woId: number }) => {
-    const response = await axios.post(`/api/v1/manufacturing/workorders/${woId}/complete`);
+    const response = await api.post(`/manufacturing/workorders/${woId}/complete`);
     return { moId, workOrder: response.data };
   }
 );
@@ -368,15 +477,50 @@ export const completeWorkOrder = createAsyncThunk(
 // Inventory Stock & Ledger
 export const fetchStockAndLedger = createAsyncThunk('inventory/fetchStockAndLedger', async () => {
   const [stockRes, ledgerRes] = await Promise.all([
-    axios.get('/api/v1/products'),
-    axios.get('/api/v1/products/ledger'),
+    api.get('/products'),
+    api.get('/products/ledger'),
   ]);
   return { stock: stockRes.data, ledger: ledgerRes.data };
 });
 
 // Audit Logs
 export const fetchAuditLogs = createAsyncThunk('auditLogs/fetch', async () => {
-  const response = await axios.get('/api/v1/audit-logs');
+  const response = await api.get('/audit-logs');
+  return response.data;
+});
+
+// Reordering Rules
+export const fetchReorderingRules = createAsyncThunk('reorderingRules/fetch', async () => {
+  const response = await api.get('/reordering-rules');
+  return response.data;
+});
+
+export const addReorderingRule = createAsyncThunk(
+  'reorderingRules/add',
+  async (rule: { productId: number; minQty: number; maxQty: number }) => {
+    const response = await api.post('/reordering-rules', rule);
+    return response.data;
+  }
+);
+
+export const editReorderingRule = createAsyncThunk(
+  'reorderingRules/edit',
+  async (rule: { id: number; minQty: number; maxQty: number }) => {
+    const response = await api.put(`/reordering-rules/${rule.id}`, {
+      minQty: rule.minQty,
+      maxQty: rule.maxQty,
+    });
+    return response.data;
+  }
+);
+
+export const deleteReorderingRule = createAsyncThunk('reorderingRules/delete', async (id: number) => {
+  await api.delete(`/reordering-rules/${id}`);
+  return id;
+});
+
+export const runReorderingScheduler = createAsyncThunk('reorderingRules/run', async () => {
+  const response = await api.post('/reordering-rules/run');
   return response.data;
 });
 
@@ -385,11 +529,14 @@ export const fetchAuditLogs = createAsyncThunk('auditLogs/fetch', async () => {
 // Auth Slice
 interface AuthState {
   token: string | null;
-  user: { name: string; email: string } | null;
+  user: { name: string; role: string } | null;
 }
 const initialAuthState: AuthState = {
   token: localStorage.getItem('token'),
-  user: localStorage.getItem('token') ? { name: 'Admin User', email: 'admin@shivfurniture.com' } : null,
+  user: localStorage.getItem('token') ? {
+    name: localStorage.getItem('username') || 'Admin User',
+    role: localStorage.getItem('role') || 'OWNER'
+  } : null,
 };
 const authSlice = createSlice({
   name: 'auth',
@@ -399,13 +546,20 @@ const authSlice = createSlice({
       state.token = null;
       state.user = null;
       localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      localStorage.removeItem('role');
     },
   },
   extraReducers: (builder) => {
     builder.addCase(loginThunk.fulfilled, (state, action) => {
       state.token = action.payload.token;
-      state.user = { name: 'Admin User', email: 'admin@shivfurniture.com' };
+      state.user = {
+        name: action.payload.username || 'Admin User',
+        role: action.payload.role || 'OWNER'
+      };
       localStorage.setItem('token', action.payload.token);
+      localStorage.setItem('username', action.payload.username || 'Admin User');
+      localStorage.setItem('role', action.payload.role || 'OWNER');
     });
   },
 });
@@ -420,13 +574,14 @@ const productsSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder.addCase(fetchProducts.fulfilled, (state, action) => {
-      state.items = action.payload.map((p: any) => ({
+      state.items = (action.payload as ApiProduct[]).map((p) => ({
         id: p.id,
         name: p.name,
         sku: p.sku,
         costPrice: p.costPrice,
         salesPrice: p.salesPrice,
         onHandQty: p.onHandQty,
+        reservedQty: p.reservedQty || 0,
         procurementStrategy: p.procurementStrategy,
         procurementType: p.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
       }));
@@ -440,6 +595,7 @@ const productsSlice = createSlice({
         costPrice: p.costPrice,
         salesPrice: p.salesPrice,
         onHandQty: p.onHandQty,
+        reservedQty: p.reservedQty || 0,
         procurementStrategy: p.procurementStrategy,
         procurementType: p.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
       });
@@ -455,6 +611,7 @@ const productsSlice = createSlice({
           costPrice: p.costPrice,
           salesPrice: p.salesPrice,
           onHandQty: p.onHandQty,
+          reservedQty: p.reservedQty || 0,
           procurementStrategy: p.procurementStrategy,
           procurementType: p.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
         };
@@ -526,9 +683,9 @@ const vendorsSlice = createSlice({
 interface SalesState {
   orders: SalesOrder[];
 }
-const mapSalesOrder = (so: any): SalesOrder => {
+const mapSalesOrder = (so: ApiSalesOrder): SalesOrder => {
   const line = so.lines[0];
-  const totalVal = so.lines.reduce((sum: number, l: any) => sum + l.unitPrice * l.qtyOrdered, 0);
+  const totalVal = so.lines.reduce((sum: number, l: ApiSalesOrderLine) => sum + l.unitPrice * l.qtyOrdered, 0);
   let statusText = 'Draft';
   if (so.status === 'CONFIRMED') statusText = 'Pending Delivery';
   else if (so.status === 'FULLY_DELIVERED') statusText = 'Completed';
@@ -539,8 +696,10 @@ const mapSalesOrder = (so: any): SalesOrder => {
     id: so.id,
     soNumber: 'SO-00' + so.id,
     customerName: so.customerName,
+    productId: line?.productId || 0,
     productName: line?.product?.name || 'N/A',
     quantity: line?.qtyOrdered || 0,
+    qtyDelivered: line?.qtyDelivered || 0,
     status: statusText,
     total: totalVal,
   };
@@ -579,11 +738,11 @@ const salesSlice = createSlice({
 interface PurchaseState {
   orders: PurchaseOrder[];
 }
-const mapPurchaseOrder = (po: any): PurchaseOrder => {
+const mapPurchaseOrder = (po: ApiPurchaseOrder): PurchaseOrder => {
   const line = po.lines[0];
-  const totalVal = po.lines.reduce((sum: number, l: any) => sum + l.unitPrice * l.qtyOrdered, 0);
+  const totalVal = po.lines.reduce((sum: number, l: ApiPurchaseOrderLine) => sum + l.unitPrice * l.qtyOrdered, 0);
   let statusText = 'Draft';
-  if (po.status === 'CONFIRMED') statusText = 'Approved';
+  if (po.status === 'CONFIRMED' || po.status === 'PARTIALLY_RECEIVED') statusText = 'Approved';
   else if (po.status === 'FULLY_RECEIVED') statusText = 'Received';
   else if (po.status === 'CANCELLED') statusText = 'Cancelled';
 
@@ -591,8 +750,10 @@ const mapPurchaseOrder = (po: any): PurchaseOrder => {
     id: po.id,
     poNumber: 'PO-00' + po.id,
     vendorName: po.vendorName,
+    productId: line?.productId || 0,
     productName: line?.product?.name || 'N/A',
     quantity: line?.qtyOrdered || 0,
+    qtyReceived: line?.qtyReceived || 0,
     status: statusText,
     total: totalVal,
   };
@@ -637,7 +798,7 @@ const bomSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder.addCase(fetchBoms.fulfilled, (state, action) => {
-      state.items = action.payload.map((b: any) => ({
+      state.items = (action.payload as ApiBoMItem[]).map((b) => ({
         id: b.id,
         finishedProduct: b.finishedProductName,
         components: b.components,
@@ -661,12 +822,12 @@ const bomSlice = createSlice({
 interface ManufacturingState {
   orders: ManufacturingOrder[];
 }
-const mapManufacturingOrder = (mo: any): ManufacturingOrder => {
+const mapManufacturingOrder = (mo: ApiManufacturingOrder): ManufacturingOrder => {
   let statusText: 'Draft' | 'In Progress' | 'Completed' = 'Draft';
   if (mo.status === 'CONFIRMED' || mo.status === 'IN_PROGRESS') statusText = 'In Progress';
   else if (mo.status === 'DONE') statusText = 'Completed';
 
-  const mappedWos = (mo.workOrders || []).map((wo: any) => ({
+  const mappedWos = (mo.workOrders || []).map((wo: ApiWorkOrder) => ({
     id: wo.id,
     workCenterName: wo.workCenter?.name || 'Unknown Center',
     sequence: wo.sequence,
@@ -739,14 +900,14 @@ const inventorySlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder.addCase(fetchStockAndLedger.fulfilled, (state, action) => {
-      state.stock = action.payload.stock.map((p: any) => ({
+      state.stock = (action.payload.stock as ApiStockProduct[]).map((p) => ({
         productId: p.id,
         productName: p.name,
         onHand: p.onHandQty,
         reserved: p.reservedQty,
         available: p.onHandQty - p.reservedQty,
       }));
-      state.ledger = action.payload.ledger.map((l: any) => ({
+      state.ledger = (action.payload.ledger as ApiLedgerEntry[]).map((l) => ({
         id: l.id,
         date: l.timestamp.replace('T', ' ').substring(0, 16),
         productName: l.product?.name || 'N/A',
@@ -768,13 +929,113 @@ const auditLogsSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder.addCase(fetchAuditLogs.fulfilled, (state, action) => {
-      state.logs = action.payload.map((log: any) => ({
+      state.logs = (action.payload as ApiAuditLog[]).map((log) => ({
         id: log.id,
         user: log.username,
         action: log.details,
         module: log.action,
         date: log.timestamp.replace('T', ' ').substring(0, 16),
       }));
+    });
+  },
+});
+
+// Reordering Rules Slice
+interface ReorderingRulesState {
+  items: ReorderingRule[];
+  loading: boolean;
+}
+const reorderingRulesSlice = createSlice({
+  name: 'reorderingRules',
+  initialState: { items: [], loading: false } as ReorderingRulesState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder.addCase(fetchReorderingRules.fulfilled, (state, action) => {
+      state.items = (action.payload as ApiReorderingRule[]).map((r) => ({
+        id: r.id,
+        productId: r.product.id,
+        productName: r.product.name,
+        minQty: r.minQty,
+        maxQty: r.maxQty,
+        lastTriggered: r.lastTriggered ? r.lastTriggered.replace('T', ' ').substring(0, 16) : undefined,
+      }));
+    });
+    builder.addCase(addReorderingRule.fulfilled, (state, action) => {
+      const r = action.payload as ApiReorderingRule;
+      state.items.unshift({
+        id: r.id,
+        productId: r.product.id,
+        productName: r.product.name,
+        minQty: r.minQty,
+        maxQty: r.maxQty,
+        lastTriggered: r.lastTriggered ? r.lastTriggered.replace('T', ' ').substring(0, 16) : undefined,
+      });
+    });
+    builder.addCase(editReorderingRule.fulfilled, (state, action) => {
+      const r = action.payload as ApiReorderingRule;
+      const idx = state.items.findIndex((item) => item.id === r.id);
+      if (idx !== -1) {
+        state.items[idx] = {
+          id: r.id,
+          productId: r.product.id,
+          productName: r.product.name,
+          minQty: r.minQty,
+          maxQty: r.maxQty,
+          lastTriggered: r.lastTriggered ? r.lastTriggered.replace('T', ' ').substring(0, 16) : undefined,
+        };
+      }
+    });
+    builder.addCase(deleteReorderingRule.fulfilled, (state, action) => {
+      state.items = state.items.filter((item) => item.id !== action.payload);
+    });
+  },
+});
+
+// Dashboard Thunks
+export const fetchDashboardKpis = createAsyncThunk('dashboard/fetchKpis', async () => {
+  const response = await api.get('/dashboard/kpis');
+  return response.data;
+});
+
+export const fetchDashboardCharts = createAsyncThunk('dashboard/fetchCharts', async () => {
+  const response = await api.get('/dashboard/charts');
+  return response.data;
+});
+
+// Dashboard Slice
+interface DashboardState {
+  kpis: {
+    totalSalesValue: number;
+    totalPurchaseValue: number;
+    pendingSalesOrders: number;
+    pendingManufacturingOrders: number;
+    totalProducts: number;
+    totalStockValue: number;
+  } | null;
+  charts: {
+    salesTrend: { date: string; amount: number }[];
+    topProducts: { productName: string; quantityOrdered: number }[];
+  } | null;
+  loading: boolean;
+}
+
+const dashboardSlice = createSlice({
+  name: 'dashboard',
+  initialState: { kpis: null, charts: null, loading: false } as DashboardState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder.addCase(fetchDashboardKpis.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(fetchDashboardKpis.fulfilled, (state, action) => {
+      state.loading = false;
+      state.kpis = action.payload;
+    });
+    builder.addCase(fetchDashboardKpis.rejected, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(fetchDashboardCharts.fulfilled, (state, action) => {
+      state.charts = action.payload;
     });
   },
 });
@@ -793,6 +1054,8 @@ export const store = configureStore({
     bom: bomSlice.reducer,
     manufacturing: manufacturingSlice.reducer,
     auditLogs: auditLogsSlice.reducer,
+    dashboard: dashboardSlice.reducer,
+    reorderingRules: reorderingRulesSlice.reducer,
   },
 });
 
@@ -814,3 +1077,5 @@ export const purchaseActions = { fetchPurchaseOrders, addPurchaseOrder, confirmP
 export const bomActions = { fetchBoms, addBoM, deleteBoM };
 export const manufacturingActions = { fetchManufacturingOrders, addManufacturingOrder, confirmManufacturingOrder, completeManufacturingOrder, startWorkOrder, completeWorkOrder };
 export const auditLogsActions = { fetchAuditLogs };
+export const dashboardActions = { fetchDashboardKpis, fetchDashboardCharts };
+export const reorderingRulesActions = { fetchReorderingRules, addReorderingRule, editReorderingRule, deleteReorderingRule, runReorderingScheduler };

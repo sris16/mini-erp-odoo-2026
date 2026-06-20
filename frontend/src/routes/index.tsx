@@ -15,12 +15,17 @@ import AuditLogs from '../pages/AuditLogs';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  allowedRoles?: string[];
 }
 
-const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
+const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {
   const token = localStorage.getItem('token');
+  const role = localStorage.getItem('role') || '';
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+  if (allowedRoles && !allowedRoles.includes(role)) {
+    return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
 };
@@ -48,14 +53,64 @@ export default function AppRoutes({ darkMode, toggleDarkMode }: AppRoutesProps) 
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="products" element={<Products />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="vendors" element={<Vendors />} />
+        
+        <Route 
+          path="customers" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'SALES_USER', 'INVENTORY_MANAGER']}>
+              <Customers />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="vendors" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'PURCHASE_USER', 'INVENTORY_MANAGER']}>
+              <Vendors />
+            </ProtectedRoute>
+          } 
+        />
         <Route path="inventory" element={<Inventory />} />
-        <Route path="sales" element={<Sales />} />
-        <Route path="purchase" element={<Purchase />} />
-        <Route path="bom" element={<BoM />} />
-        <Route path="manufacturing" element={<Manufacturing />} />
-        <Route path="audit-logs" element={<AuditLogs />} />
+        <Route 
+          path="sales" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'SALES_USER', 'INVENTORY_MANAGER']}>
+              <Sales />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="purchase" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'PURCHASE_USER', 'INVENTORY_MANAGER']}>
+              <Purchase />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="bom" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER']}>
+              <BoM />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="manufacturing" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER']}>
+              <Manufacturing />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="audit-logs" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER']}>
+              <AuditLogs />
+            </ProtectedRoute>
+          } 
+        />
       </Route>
 
       {/* Fallback */}

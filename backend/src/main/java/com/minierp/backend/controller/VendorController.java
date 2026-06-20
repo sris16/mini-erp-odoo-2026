@@ -1,10 +1,13 @@
 package com.minierp.backend.controller;
 
 import com.minierp.backend.model.Vendor;
+import com.minierp.backend.model.AuditLog;
 import com.minierp.backend.repository.VendorRepository;
+import com.minierp.backend.repository.AuditLogRepository;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,9 +17,11 @@ import java.util.List;
 public class VendorController {
 
     private final VendorRepository vendorRepository;
+    private final AuditLogRepository auditLogRepository;
 
-    public VendorController(VendorRepository vendorRepository) {
+    public VendorController(VendorRepository vendorRepository, AuditLogRepository auditLogRepository) {
         this.vendorRepository = vendorRepository;
+        this.auditLogRepository = auditLogRepository;
     }
 
     @GetMapping
@@ -27,7 +32,16 @@ public class VendorController {
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'PURCHASE_USER')")
     public ResponseEntity<Vendor> createVendor(@Valid @RequestBody Vendor vendor) {
-        return ResponseEntity.ok(vendorRepository.save(vendor));
+        Vendor savedVendor = vendorRepository.save(vendor);
+
+        AuditLog auditLog = AuditLog.builder()
+                .username(getCurrentUsername())
+                .action("CREATE_VENDOR")
+                .details(String.format("Created vendor ID %d: %s", savedVendor.getId(), savedVendor.getName()))
+                .build();
+        auditLogRepository.save(auditLog);
+
+        return ResponseEntity.ok(savedVendor);
     }
 
     @PutMapping("/{id}")
@@ -39,7 +53,16 @@ public class VendorController {
         vendor.setPhone(vendorDetails.getPhone());
         vendor.setEmail(vendorDetails.getEmail());
         vendor.setAddress(vendorDetails.getAddress());
-        return ResponseEntity.ok(vendorRepository.save(vendor));
+        Vendor updatedVendor = vendorRepository.save(vendor);
+
+        AuditLog auditLog = AuditLog.builder()
+                .username(getCurrentUsername())
+                .action("UPDATE_VENDOR")
+                .details(String.format("Updated vendor ID %d: %s", id, updatedVendor.getName()))
+                .build();
+        auditLogRepository.save(auditLog);
+
+        return ResponseEntity.ok(updatedVendor);
     }
 
     @DeleteMapping("/{id}")
@@ -48,6 +71,21 @@ public class VendorController {
         Vendor vendor = vendorRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Vendor not found with id: " + id));
         vendorRepository.delete(vendor);
+
+        AuditLog auditLog = AuditLog.builder()
+                .username(getCurrentUsername())
+                .action("DELETE_VENDOR")
+                .details(String.format("Deleted vendor ID %d: %s", id, vendor.getName()))
+                .build();
+        auditLogRepository.save(auditLog);
+
         return ResponseEntity.noContent().build();
+    }
+
+    private String getCurrentUsername() {
+        if (SecurityContextHolder.getContext().getAuthentication() != null) {
+            return SecurityContextHolder.getContext().getAuthentication().getName();
+        }
+        return "SYSTEM";
     }
 }

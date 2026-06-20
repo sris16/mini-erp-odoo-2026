@@ -12,8 +12,8 @@ import {
   TrendingUp as SalesIcon,
   ReceiptLong as PurchaseIcon,
   PrecisionManufacturing as MfgIcon,
-  Warning as LowStockIcon,
   LocalShipping as DeliveryIcon,
+  Inventory as InventoryIcon,
 } from '@mui/icons-material';
 import {
   ResponsiveContainer,
@@ -35,18 +35,8 @@ import {
   salesActions,
   purchaseActions,
   manufacturingActions,
+  dashboardActions,
 } from '../../store';
-
-// Static mock chart data
-const salesTrendData = [
-  { name: 'Mon', sales: 350 },
-  { name: 'Tue', sales: 530 },
-  { name: 'Wed', sales: 480 },
-  { name: 'Thu', sales: 700 },
-  { name: 'Fri', sales: 650 },
-  { name: 'Sat', sales: 980 },
-  { name: 'Sun', sales: 850 },
-];
 
 export default function Dashboard() {
   const theme = useTheme();
@@ -57,68 +47,82 @@ export default function Dashboard() {
     dispatch(salesActions.fetchSalesOrders());
     dispatch(purchaseActions.fetchPurchaseOrders());
     dispatch(manufacturingActions.fetchManufacturingOrders());
+    dispatch(dashboardActions.fetchDashboardKpis());
+    dispatch(dashboardActions.fetchDashboardCharts());
   }, [dispatch]);
 
   // Dynamic Redux state counts
   const products = useAppSelector((state) => state.products.items);
   const salesOrders = useAppSelector((state) => state.sales.orders);
-  const purchaseOrders = useAppSelector((state) => state.purchase.orders);
   const mfgOrders = useAppSelector((state) => state.manufacturing.orders);
+  const dashboardKpis = useAppSelector((state) => state.dashboard.kpis);
+  const dashboardCharts = useAppSelector((state) => state.dashboard.charts);
   
   const totalProductsCount = products.length;
-  const salesCount = salesOrders.length;
-  const purchaseCount = purchaseOrders.length;
   const mfgCount = mfgOrders.length;
-
-  // Calculate low stock products (e.g. quantity < 20)
-  const lowStockCount = products.filter((p) => p.onHandQty < 20).length;
 
   // Calculate pending deliveries (sales orders with Pending Delivery status)
   const pendingDeliveriesCount = salesOrders.filter((o) => o.status === 'Pending Delivery').length;
 
-  // Map product stock levels for bar chart
+  // Map product stock levels for bar chart using dynamic reservedQty
   const stockChartData = products.map((p) => ({
     name: p.name.split(' ')[0], // Short name
     onHand: p.onHandQty,
-    reserved: p.id === 1 ? 4 : p.id === 2 ? 10 : p.id === 3 ? 20 : 2, // Mock reserved matching store
+    reserved: p.reservedQty || 0,
   }));
+
+  // Dynamic sales trend mapped to Recharts format
+  const salesTrendData = dashboardCharts?.salesTrend && dashboardCharts.salesTrend.length > 0
+    ? dashboardCharts.salesTrend.map((t) => ({
+        name: t.date,
+        sales: t.amount,
+      }))
+    : [
+        { name: 'Mon', sales: 0 },
+        { name: 'Tue', sales: 0 },
+        { name: 'Wed', sales: 0 },
+        { name: 'Thu', sales: 0 },
+        { name: 'Fri', sales: 0 },
+        { name: 'Sat', sales: 0 },
+        { name: 'Sun', sales: 0 },
+      ];
 
   const kpis = [
     {
       title: 'Total Products',
-      value: totalProductsCount,
+      value: dashboardKpis?.totalProducts ?? totalProductsCount,
       icon: <ProductsIcon sx={{ fontSize: 32, color: theme.palette.secondary.main }} />,
       color: theme.palette.secondary.main,
     },
     {
-      title: 'Sales Orders',
-      value: salesCount,
+      title: 'Sales Revenue',
+      value: dashboardKpis !== null ? `$${dashboardKpis.totalSalesValue.toFixed(2)}` : `$${(0).toFixed(2)}`,
       icon: <SalesIcon sx={{ fontSize: 32, color: theme.palette.primary.main }} />,
       color: theme.palette.primary.main,
     },
     {
-      title: 'Purchase Orders',
-      value: purchaseCount,
+      title: 'Purchase Spend',
+      value: dashboardKpis !== null ? `$${dashboardKpis.totalPurchaseValue.toFixed(2)}` : `$${(0).toFixed(2)}`,
       icon: <PurchaseIcon sx={{ fontSize: 32, color: theme.palette.warning.main }} />,
       color: theme.palette.warning.main,
     },
     {
-      title: 'Manufacturing Orders',
-      value: mfgCount,
-      icon: <MfgIcon sx={{ fontSize: 32, color: theme.palette.primary.light }} />,
-      color: theme.palette.primary.light,
+      title: 'Stock Valuation',
+      value: dashboardKpis !== null ? `$${dashboardKpis.totalStockValue.toFixed(2)}` : `$${(0).toFixed(2)}`,
+      icon: <InventoryIcon sx={{ fontSize: 32, color: theme.palette.info.main }} />,
+      color: theme.palette.info.main,
     },
     {
-      title: 'Low Stock Products',
-      value: lowStockCount,
-      icon: <LowStockIcon sx={{ fontSize: 32, color: theme.palette.error.main }} />,
-      color: theme.palette.error.main,
-    },
-    {
-      title: 'Pending Deliveries',
-      value: pendingDeliveriesCount,
+      title: 'Pending Sales Orders',
+      value: dashboardKpis?.pendingSalesOrders ?? pendingDeliveriesCount,
       icon: <DeliveryIcon sx={{ fontSize: 32, color: theme.palette.success.main }} />,
       color: theme.palette.success.main,
+    },
+    {
+      title: 'Pending Mfg Orders',
+      value: dashboardKpis?.pendingManufacturingOrders ?? mfgCount,
+      icon: <MfgIcon sx={{ fontSize: 32, color: theme.palette.primary.light }} />,
+      color: theme.palette.primary.light,
     },
   ];
 

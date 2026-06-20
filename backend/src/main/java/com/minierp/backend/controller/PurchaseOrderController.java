@@ -2,6 +2,7 @@ package com.minierp.backend.controller;
 
 import com.minierp.backend.model.PurchaseOrder;
 import com.minierp.backend.service.PurchaseOrderService;
+import com.minierp.backend.dto.PartialReceiptRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -56,8 +57,8 @@ public class PurchaseOrderController {
 
     @PostMapping("/{id}/receive")
     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'INVENTORY_MANAGER')")
-    public ResponseEntity<PurchaseOrder> receivePurchaseOrder(@PathVariable Long id) {
-        return ResponseEntity.ok(purchaseOrderService.receivePurchaseOrder(id));
+    public ResponseEntity<PurchaseOrder> receivePurchaseOrder(@PathVariable Long id, @RequestBody(required = false) List<PartialReceiptRequest> partialReceipts) {
+        return ResponseEntity.ok(purchaseOrderService.receivePurchaseOrder(id, partialReceipts));
     }
 
     @PostMapping("/{id}/cancel")

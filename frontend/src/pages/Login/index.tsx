@@ -63,7 +63,7 @@ export default function Login() {
         setError((resultAction.payload as string) || 'Invalid credentials. Use admin / admin123');
         setLoading(false);
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected connection error occurred.');
       setLoading(false);
     }

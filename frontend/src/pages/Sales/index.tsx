@@ -31,7 +31,7 @@ import {
   CheckCircle as ApproveIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import {
@@ -64,6 +64,9 @@ export default function Sales() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [open, setOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [activeDeliveryOrder, setActiveDeliveryOrder] = useState<SalesOrder | null>(null);
+  const [deliveryQty, setDeliveryQty] = useState<number>(0);
 
   useEffect(() => {
     dispatch(salesActions.fetchSalesOrders());
@@ -75,7 +78,6 @@ export default function Sales() {
     control,
     handleSubmit,
     reset,
-    watch,
     formState: { errors },
   } = useForm<SalesOrderFormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,8 +89,8 @@ export default function Sales() {
     },
   });
 
-  const selectedProduct = watch('productName');
-  const enteredQty = watch('quantity');
+  const selectedProduct = useWatch({ control, name: 'productName' });
+  const enteredQty = useWatch({ control, name: 'quantity' });
 
   const currentProduct = products.find((p) => p.name === selectedProduct);
   const calculatedTotal = currentProduct ? currentProduct.salesPrice * (enteredQty || 0) : 0;
@@ -126,7 +128,9 @@ export default function Sales() {
     if (row.status === 'Draft') {
       dispatch(salesActions.confirmSalesOrder(row.id));
     } else if (row.status === 'Pending Delivery') {
-      dispatch(salesActions.deliverSalesOrder(row.id));
+      setActiveDeliveryOrder(row);
+      setDeliveryQty(row.quantity - row.qtyDelivered);
+      setDeliveryOpen(true);
     }
   };
 
@@ -201,7 +205,17 @@ export default function Sales() {
                     <TableCell sx={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.soNumber}</TableCell>
                     <TableCell>{row.customerName}</TableCell>
                     <TableCell>{row.productName}</TableCell>
-                    <TableCell align="right">{row.quantity} units</TableCell>
+                    <TableCell align="right">
+                      {row.qtyDelivered > 0 && row.qtyDelivered < row.quantity ? (
+                        <Tooltip title={`Delivered: ${row.qtyDelivered} / ${row.quantity} units`}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {row.qtyDelivered} / {row.quantity} units
+                          </Typography>
+                        </Tooltip>
+                      ) : (
+                        `${row.quantity} units`
+                      )}
+                    </TableCell>
                     <TableCell align="right">${row.total.toFixed(2)}</TableCell>
                     <TableCell>
                       <Chip label={row.status} size="small" color={getStatusColor(row.status)} />
@@ -315,6 +329,78 @@ export default function Sales() {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Delivery Confirmation Dialog */}
+      <Dialog open={deliveryOpen} onClose={() => setDeliveryOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>Deliver Products</DialogTitle>
+        <Divider />
+        <DialogContent>
+          {activeDeliveryOrder && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                {activeDeliveryOrder.productName}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                SO Number: {activeDeliveryOrder.soNumber}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Total Ordered: {activeDeliveryOrder.quantity} units
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Already Shipped: {activeDeliveryOrder.qtyDelivered} units
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Remaining to Ship: {activeDeliveryOrder.quantity - activeDeliveryOrder.qtyDelivered} units
+              </Typography>
+
+              <TextField
+                label="Quantity to Ship Now"
+                type="number"
+                fullWidth
+                value={deliveryQty}
+                onChange={(e) => setDeliveryQty(Math.max(1, parseInt(e.target.value) || 0))}
+                slotProps={{
+                  htmlInput: {
+                    min: 1,
+                    max: activeDeliveryOrder.quantity - activeDeliveryOrder.qtyDelivered,
+                  }
+                }}
+              />
+            </Stack>
+          )}
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDeliveryOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (activeDeliveryOrder) {
+                dispatch(
+                  salesActions.deliverSalesOrder({
+                    id: activeDeliveryOrder.id,
+                    partials: [
+                      {
+                        productId: activeDeliveryOrder.productId,
+                        qtyToDeliver: deliveryQty,
+                      },
+                    ],
+                  })
+                ).then(() => {
+                  dispatch(salesActions.fetchSalesOrders());
+                });
+              }
+              setDeliveryOpen(false);
+            }}
+            variant="contained"
+            color="success"
+            disabled={!activeDeliveryOrder || deliveryQty <= 0 || deliveryQty > (activeDeliveryOrder.quantity - activeDeliveryOrder.qtyDelivered)}
+          >
+            Confirm Shipment
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

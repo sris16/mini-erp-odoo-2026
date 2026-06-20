@@ -18,17 +18,20 @@ public class ProcurementService {
     private final BomRepository bomRepository;
     private final BomOperationRepository bomOperationRepository;
     private final AuditLogRepository auditLogRepository;
+    private final ReorderingRuleRepository reorderingRuleRepository;
 
     public ProcurementService(PurchaseOrderRepository purchaseOrderRepository,
                               ManufacturingOrderRepository manufacturingOrderRepository,
                               BomRepository bomRepository,
                               BomOperationRepository bomOperationRepository,
-                              AuditLogRepository auditLogRepository) {
+                              AuditLogRepository auditLogRepository,
+                              ReorderingRuleRepository reorderingRuleRepository) {
         this.purchaseOrderRepository = purchaseOrderRepository;
         this.manufacturingOrderRepository = manufacturingOrderRepository;
         this.bomRepository = bomRepository;
         this.bomOperationRepository = bomOperationRepository;
         this.auditLogRepository = auditLogRepository;
+        this.reorderingRuleRepository = reorderingRuleRepository;
     }
 
     @Transactional
@@ -149,5 +152,55 @@ public class ProcurementService {
                         mo.getId(), product.getName(), product.getSku(), mo.getWorkOrders().size(), bom.getId(), sourceDocument))
                 .build();
         auditLogRepository.save(auditLog);
+    }
+
+    @Transactional
+    public void runReorderingRules() {
+        List<ReorderingRule> rules = reorderingRuleRepository.findAll();
+        List<PurchaseOrder> purchaseOrders = purchaseOrderRepository.findAll();
+        List<ManufacturingOrder> manufacturingOrders = manufacturingOrderRepository.findAll();
+
+        for (ReorderingRule rule : rules) {
+            Product product = rule.getProduct();
+            if (product == null) continue;
+
+            int onHand = product.getOnHandQty() != null ? product.getOnHandQty() : 0;
+            int reserved = product.getReservedQty() != null ? product.getReservedQty() : 0;
+
+            // Calculate pending incoming stock from CONFIRMED/PARTIALLY_RECEIVED POs
+            int pendingIncomingPO = 0;
+            for (PurchaseOrder po : purchaseOrders) {
+                if (po.getStatus() == PurchaseOrderStatus.CONFIRMED || po.getStatus() == PurchaseOrderStatus.PARTIALLY_RECEIVED) {
+                    for (PurchaseOrderLine line : po.getLines()) {
+                        if (line.getProduct().getId().equals(product.getId())) {
+                            int ordered = line.getQtyOrdered() != null ? line.getQtyOrdered() : 0;
+                            int received = line.getQtyReceived() != null ? line.getQtyReceived() : 0;
+                            pendingIncomingPO += Math.max(0, ordered - received);
+                        }
+                    }
+                }
+            }
+
+            // Calculate pending incoming stock from CONFIRMED/IN_PROGRESS MOs
+            int pendingIncomingMO = 0;
+            for (ManufacturingOrder mo : manufacturingOrders) {
+                if (mo.getStatus() == ManufacturingOrderStatus.CONFIRMED || mo.getStatus() == ManufacturingOrderStatus.IN_PROGRESS) {
+                    if (mo.getFinishedProduct().getId().equals(product.getId())) {
+                        pendingIncomingMO += mo.getQty() != null ? mo.getQty() : 0;
+                    }
+                }
+            }
+
+            int forecasted = onHand + pendingIncomingPO + pendingIncomingMO - reserved;
+
+            if (forecasted < rule.getMinQty()) {
+                int qtyToProcure = rule.getMaxQty() - forecasted;
+                if (qtyToProcure > 0) {
+                    autoProcure(product, qtyToProcure, "Reordering Rule ID: " + rule.getId());
+                    rule.setLastTriggered(LocalDateTime.now());
+                    reorderingRuleRepository.save(rule);
+                }
+            }
+        }
     }
 }

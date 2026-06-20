@@ -2,6 +2,7 @@ package com.minierp.backend.controller;
 
 import com.minierp.backend.model.SalesOrder;
 import com.minierp.backend.service.SalesOrderService;
+import com.minierp.backend.dto.PartialDeliveryRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -56,8 +57,8 @@ public class SalesOrderController {
 
     @PostMapping("/{id}/deliver")
     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'INVENTORY_MANAGER')")
-    public ResponseEntity<SalesOrder> deliverSalesOrder(@PathVariable Long id) {
-        return ResponseEntity.ok(salesOrderService.deliverSalesOrder(id));
+    public ResponseEntity<SalesOrder> deliverSalesOrder(@PathVariable Long id, @RequestBody(required = false) List<PartialDeliveryRequest> partialDeliveries) {
+        return ResponseEntity.ok(salesOrderService.deliverSalesOrder(id, partialDeliveries));
     }
 
     @PostMapping("/{id}/cancel")

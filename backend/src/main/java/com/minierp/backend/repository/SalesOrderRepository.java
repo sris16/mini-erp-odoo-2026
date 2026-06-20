@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface SalesOrderRepository extends JpaRepository<SalesOrder, Long> {
     List<SalesOrder> findAllByOrderByOrderDateDesc();
+    List<SalesOrder> findAllByOrderByOrderDateAsc();
 }

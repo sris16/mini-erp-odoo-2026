@@ -1,19 +1,19 @@
-import axios from 'axios';
+import api from './api';
 import type { SalesOrder } from '../store';
 
-const API_URL = '/api/v1/sales';
+const API_URL = '/sales';
 
 export const salesService = {
   getSalesOrders: async () => {
-    const response = await axios.get(API_URL);
+    const response = await api.get(API_URL);
     return response.data;
   },
   createSalesOrder: async (order: Omit<SalesOrder, 'soNumber'>) => {
-    const response = await axios.post(API_URL, order);
+    const response = await api.post(API_URL, order);
     return response.data;
   },
   updateSalesOrderStatus: async (soNumber: string, status: string) => {
-    const response = await axios.patch(`${API_URL}/${soNumber}/status`, { status });
+    const response = await api.patch(`${API_URL}/${soNumber}/status`, { status });
     return response.data;
   },
 };

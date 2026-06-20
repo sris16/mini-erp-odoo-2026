@@ -41,6 +41,7 @@ import {
 
 import NotificationCenter from '../../components/common/NotificationCenter';
 import CommandPalette from '../../components/common/CommandPalette';
+import { useAppSelector, useAppDispatch, authActions } from '../../store';
 
 const drawerWidth = 240;
 
@@ -54,6 +55,8 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
   const [profileAnchor, setProfileAnchor] = useState<HTMLElement | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
 
   const handleDrawerToggle = () => {
     setOpen(!open);
@@ -68,24 +71,25 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    dispatch(authActions.logout());
     navigate('/login');
     handleProfileClose();
   };
 
-  // Sidebar navigation mapping
+  // Sidebar navigation mapping filtered by active user role
+  const userRole = user?.role || 'OWNER';
   const menuItems = [
     { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
     { text: 'Products', path: '/products', icon: <ProductsIcon /> },
-    { text: 'Customers', path: '/customers', icon: <CustomersIcon /> },
-    { text: 'Vendors', path: '/vendors', icon: <VendorsIcon /> },
+    { text: 'Customers', path: '/customers', icon: <CustomersIcon />, roles: ['ADMIN', 'OWNER', 'SALES_USER', 'INVENTORY_MANAGER'] },
+    { text: 'Vendors', path: '/vendors', icon: <VendorsIcon />, roles: ['ADMIN', 'OWNER', 'PURCHASE_USER', 'INVENTORY_MANAGER'] },
     { text: 'Inventory', path: '/inventory', icon: <InventoryIcon /> },
-    { text: 'Sales', path: '/sales', icon: <SalesIcon /> },
-    { text: 'Purchase', path: '/purchase', icon: <PurchaseIcon /> },
-    { text: 'BoM', path: '/bom', icon: <BoMIcon /> },
-    { text: 'Manufacturing', path: '/manufacturing', icon: <MfgIcon /> },
-    { text: 'Audit Logs', path: '/audit-logs', icon: <AuditIcon /> },
-  ];
+    { text: 'Sales', path: '/sales', icon: <SalesIcon />, roles: ['ADMIN', 'OWNER', 'SALES_USER', 'INVENTORY_MANAGER'] },
+    { text: 'Purchase', path: '/purchase', icon: <PurchaseIcon />, roles: ['ADMIN', 'OWNER', 'PURCHASE_USER', 'INVENTORY_MANAGER'] },
+    { text: 'BoM', path: '/bom', icon: <BoMIcon />, roles: ['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER'] },
+    { text: 'Manufacturing', path: '/manufacturing', icon: <MfgIcon />, roles: ['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER'] },
+    { text: 'Audit Logs', path: '/audit-logs', icon: <AuditIcon />, roles: ['ADMIN', 'OWNER'] },
+  ].filter(item => !item.roles || item.roles.includes(userRole));
 
   // Breadcrumbs generation
   const pathnames = location.pathname.split('/').filter((x) => x);
@@ -184,7 +188,7 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
             {/* User Profile */}
             <IconButton onClick={handleProfileOpen} sx={{ p: 0, ml: 1 }}>
               <Avatar sx={{ bgcolor: 'secondary.main', width: 32, height: 32, fontSize: '0.9rem' }}>
-                A
+                {(user?.name?.charAt(0) || 'A').toUpperCase()}
               </Avatar>
             </IconButton>
             <Menu
@@ -197,10 +201,10 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
             >
               <Box sx={{ px: 2, py: 1 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                  Admin User
+                  {user?.name || 'Admin User'}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" noWrap>
-                  admin@shivfurniture.com
+                  {user?.role || 'OWNER'}
                 </Typography>
               </Box>
               <Divider />

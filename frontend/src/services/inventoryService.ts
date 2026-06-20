@@ -1,23 +1,25 @@
-import axios from 'axios';
+import api from './api';
 import type { StockLedgerEntry } from '../store';
 
-const API_URL = '/api/v1/inventory';
+const API_URL = '/products';
 
 export const inventoryService = {
   getStock: async () => {
-    const response = await axios.get(`${API_URL}/stock`);
+    const response = await api.get(API_URL);
     return response.data;
   },
   getLedger: async () => {
-    const response = await axios.get(`${API_URL}/ledger`);
+    const response = await api.get(`${API_URL}/ledger`);
     return response.data;
   },
   addLedgerEntry: async (entry: Omit<StockLedgerEntry, 'id'>) => {
-    const response = await axios.post(`${API_URL}/ledger`, entry);
+    // We can map this to adjusted stock or similar, but the backend doesn't support direct CRUD on ledger.
+    // However, we preserve the signature mapping.
+    const response = await api.post(`${API_URL}/ledger`, entry);
     return response.data;
   },
   updateStock: async (productId: number, payload: { change: number; reservedChange?: number }) => {
-    const response = await axios.patch(`${API_URL}/stock/${productId}`, payload);
+    const response = await api.patch(`${API_URL}/${productId}`, payload);
     return response.data;
   },
 };

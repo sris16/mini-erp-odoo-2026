@@ -24,6 +24,7 @@ import {
   Stack,
   Tooltip,
   Divider,
+  Chip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -38,6 +39,7 @@ import {
   useAppDispatch,
   useAppSelector,
   productsActions,
+  reorderingRulesActions,
   type Product,
 } from '../../store';
 
@@ -56,9 +58,11 @@ type ProductFormData = yup.InferType<typeof schema>;
 export default function Products() {
   const dispatch = useAppDispatch();
   const products = useAppSelector((state) => state.products.items);
+  const reorderingRules = useAppSelector((state) => state.reorderingRules.items);
 
   useEffect(() => {
     dispatch(productsActions.fetchProducts());
+    dispatch(reorderingRulesActions.fetchReorderingRules());
   }, [dispatch]);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -183,29 +187,47 @@ export default function Products() {
             </TableHead>
             <TableBody>
               {filteredProducts.length > 0 ? (
-                filteredProducts.map((row) => (
-                  <TableRow key={row.id} hover>
-                    <TableCell sx={{ fontWeight: 500 }}>{row.name}</TableCell>
-                    <TableCell>{row.sku}</TableCell>
-                    <TableCell align="right">${row.costPrice.toFixed(2)}</TableCell>
-                    <TableCell align="right">${row.salesPrice.toFixed(2)}</TableCell>
-                    <TableCell align="right">{row.onHandQty} units</TableCell>
-                    <TableCell align="center">
-                      <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
-                        <Tooltip title="Edit Product">
-                          <IconButton size="small" onClick={() => handleOpenEdit(row)} color="primary">
-                            <EditIcon sx={{ fontSize: 18 }} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete Product">
-                          <IconButton size="small" onClick={() => handleDelete(row.id, row.name)} color="error">
-                            <DeleteIcon sx={{ fontSize: 18 }} />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))
+                filteredProducts.map((row) => {
+                  const rule = reorderingRules.find((r) => r.productId === row.id);
+                  const isLowStock = rule ? row.onHandQty < rule.minQty : false;
+                  return (
+                    <TableRow key={row.id} hover>
+                      <TableCell sx={{ fontWeight: 500 }}>{row.name}</TableCell>
+                      <TableCell>{row.sku}</TableCell>
+                      <TableCell align="right">${row.costPrice.toFixed(2)}</TableCell>
+                      <TableCell align="right">${row.salesPrice.toFixed(2)}</TableCell>
+                      <TableCell align="right">
+                        {isLowStock ? (
+                          <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <Chip
+                              label="Low Stock"
+                              color="warning"
+                              size="small"
+                              sx={{ fontSize: '0.7rem', height: 18 }}
+                            />
+                            <Typography variant="body2">{row.onHandQty} units</Typography>
+                          </Stack>
+                        ) : (
+                          `${row.onHandQty} units`
+                        )}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
+                          <Tooltip title="Edit Product">
+                            <IconButton size="small" onClick={() => handleOpenEdit(row)} color="primary">
+                              <EditIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete Product">
+                            <IconButton size="small" onClick={() => handleDelete(row.id, row.name)} color="error">
+                              <DeleteIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               ) : (
                 <TableRow>
                   <TableCell colSpan={6} align="center" sx={{ py: 6 }}>

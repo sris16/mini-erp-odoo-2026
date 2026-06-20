@@ -3,6 +3,7 @@ package com.minierp.backend.service;
 import com.minierp.backend.model.*;
 import com.minierp.backend.repository.AuditLogRepository;
 import com.minierp.backend.repository.SalesOrderRepository;
+import com.minierp.backend.dto.PartialDeliveryRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -165,40 +166,74 @@ public class SalesOrderService {
 
     @Transactional
     public SalesOrder deliverSalesOrder(Long id) {
+        return deliverSalesOrder(id, null);
+    }
+
+    @Transactional
+    public SalesOrder deliverSalesOrder(Long id, List<PartialDeliveryRequest> partialDeliveries) {
         SalesOrder salesOrder = getSalesOrderById(id);
 
-        if (salesOrder.getStatus() != SalesOrderStatus.CONFIRMED) {
-            throw new IllegalStateException("Only CONFIRMED Sales Orders can be delivered");
+        if (salesOrder.getStatus() != SalesOrderStatus.CONFIRMED && salesOrder.getStatus() != SalesOrderStatus.PARTIALLY_DELIVERED) {
+            throw new IllegalStateException("Only CONFIRMED or PARTIALLY_DELIVERED Sales Orders can be delivered");
         }
 
-        // 1. Dry run: Verify all products have enough physical on-hand stock
-        for (SalesOrderLine line : salesOrder.getLines()) {
-            Product product = line.getProduct();
-            int qtyOrdered = line.getQtyOrdered();
-            if (product.getOnHandQty() < qtyOrdered) {
-                throw new IllegalStateException(String.format("Cannot deliver. Insufficient physical stock for product %s (%s). On hand: %d, Required: %d",
-                        product.getName(), product.getSku(), product.getOnHandQty(), qtyOrdered));
-            }
-        }
-
-        // 2. Perform actual delivery and log movements
+        // 1. Resolve and verify quantities to deliver
         String sourceDoc = "SO-" + id;
         for (SalesOrderLine line : salesOrder.getLines()) {
             Product product = line.getProduct();
-            int qtyOrdered = line.getQtyOrdered();
+            int remaining = line.getQtyOrdered() - (line.getQtyDelivered() != null ? line.getQtyDelivered() : 0);
+            if (remaining <= 0) continue;
 
-            stockLedgerService.executeDelivery(product, qtyOrdered, sourceDoc);
-            line.setQtyDelivered(qtyOrdered);
+            int qtyToDeliver = remaining;
+            if (partialDeliveries != null && !partialDeliveries.isEmpty()) {
+                qtyToDeliver = partialDeliveries.stream()
+                        .filter(p -> p.getProductId().equals(product.getId()))
+                        .map(PartialDeliveryRequest::getQtyToDeliver)
+                        .findFirst()
+                        .orElse(0); // If product is not in partial list, do not deliver
+            }
+
+            if (qtyToDeliver <= 0) continue;
+
+            if (qtyToDeliver > remaining) {
+                throw new IllegalArgumentException(String.format("Cannot deliver more than remaining quantity (%d) for product %s", remaining, product.getName()));
+            }
+
+            if (product.getOnHandQty() < qtyToDeliver) {
+                throw new IllegalStateException(String.format("Cannot deliver. Insufficient physical stock for product %s (%s). On hand: %d, Required: %d",
+                        product.getName(), product.getSku(), product.getOnHandQty(), qtyToDeliver));
+            }
+
+            stockLedgerService.executeDelivery(product, qtyToDeliver, sourceDoc);
+            line.setQtyDelivered((line.getQtyDelivered() != null ? line.getQtyDelivered() : 0) + qtyToDeliver);
         }
 
-        salesOrder.setStatus(SalesOrderStatus.FULLY_DELIVERED);
+        // 2. Update status
+        boolean allFullyDelivered = true;
+        boolean anyDelivered = false;
+        for (SalesOrderLine line : salesOrder.getLines()) {
+            int delivered = line.getQtyDelivered() != null ? line.getQtyDelivered() : 0;
+            if (delivered < line.getQtyOrdered()) {
+                allFullyDelivered = false;
+            }
+            if (delivered > 0) {
+                anyDelivered = true;
+            }
+        }
+
+        if (allFullyDelivered) {
+            salesOrder.setStatus(SalesOrderStatus.FULLY_DELIVERED);
+        } else if (anyDelivered) {
+            salesOrder.setStatus(SalesOrderStatus.PARTIALLY_DELIVERED);
+        }
+
         SalesOrder deliveredOrder = salesOrderRepository.save(salesOrder);
 
         String username = getCurrentUsername();
         AuditLog auditLog = AuditLog.builder()
                 .username(username)
                 .action("DELIVER_SALES_ORDER")
-                .details(String.format("Delivered Sales Order ID %d. Deducted stock and logged OUT transactions.", id))
+                .details(String.format("Processed delivery for Sales Order ID %d. Status is now %s.", id, salesOrder.getStatus()))
                 .build();
         auditLogRepository.save(auditLog);
 
