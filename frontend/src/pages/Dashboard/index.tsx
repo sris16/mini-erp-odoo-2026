@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -70,29 +70,39 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState({
-    showKpis: true,
-    showSalesTrend: true,
-    showInventoryStatus: true,
-    showOrderStatuses: true,
-    showLowStockAlerts: true,
-    showTopVendors: true,
-    showTopCustomers: true,
-    showMfgStatuses: true,
-    layoutDensity: 'spacious', // 'compact' | 'spacious'
-  });
-
-  // Load and subscribe to settings
-  useEffect(() => {
+  const [settings, setSettings] = useState(() => {
+    const defaultSettings = {
+      showKpis: true,
+      showSalesTrend: true,
+      showInventoryStatus: true,
+      showOrderStatuses: true,
+      showLowStockAlerts: true,
+      showTopVendors: true,
+      showTopCustomers: true,
+      showMfgStatuses: true,
+      layoutDensity: 'spacious', // 'compact' | 'spacious'
+    };
     const saved = localStorage.getItem('dashboardSettings');
     if (saved) {
-      setSettings((prev) => ({ ...prev, ...JSON.parse(saved) }));
+      try {
+        return { ...defaultSettings, ...JSON.parse(saved) };
+      } catch (_e) {
+        return defaultSettings;
+      }
     }
+    return defaultSettings;
+  });
 
+  // Subscribe to settings changes
+  useEffect(() => {
     const handleSettingsChange = () => {
       const updated = localStorage.getItem('dashboardSettings');
       if (updated) {
-        setSettings((prev) => ({ ...prev, ...JSON.parse(updated) }));
+        try {
+          setSettings((prev) => ({ ...prev, ...JSON.parse(updated) }));
+        } catch (_e) {
+          // ignore parsing error
+        }
       }
     };
     window.addEventListener('settingsChanged', handleSettingsChange);
@@ -100,7 +110,7 @@ export default function Dashboard() {
   }, []);
 
   // Fetch all dashboard-related data
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     dispatch(productsActions.fetchProducts());
     dispatch(salesActions.fetchSalesOrders());
     dispatch(purchaseActions.fetchPurchaseOrders());
@@ -112,11 +122,11 @@ export default function Dashboard() {
     dispatch(locationsActions.fetchLocations());
     dispatch(locationsActions.fetchTransfers());
     dispatch(usersActions.fetchUsers());
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     handleRefresh();
-  }, [dispatch]);
+  }, [handleRefresh]);
 
   // Selectors
   const products = useAppSelector((state) => state.products.items);
@@ -419,7 +429,7 @@ export default function Dashboard() {
           <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
             Welcome back, {userName}!
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" component="div" color="text.secondary">
             Role: <Chip label={userRole} size="small" color="primary" sx={{ fontWeight: 600, ml: 0.5 }} /> — Here is the operational state of Shiv Furniture Works.
           </Typography>
         </Box>
