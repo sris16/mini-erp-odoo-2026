@@ -54,10 +54,10 @@ const schema = yup.object().shape({
         name: yup.string().required('Component name is required'),
         qty: yup
           .number()
-          .typeError('Quantity must be a number')
-          .required('Quantity is required')
-          .positive('Quantity must be positive')
-          .integer(),
+          .transform((value) => (Number.isNaN(value) ? undefined : value))
+          .required('Please enter a value')
+          .min(1, 'Please enter a value greater than 0')
+          .integer('Must be a whole number'),
       })
     )
     .min(1, 'At least one component line is required')

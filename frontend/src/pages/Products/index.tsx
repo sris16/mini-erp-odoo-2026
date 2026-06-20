@@ -47,9 +47,9 @@ import DebouncedTextField from '../../components/common/DebouncedTextField';
 const schema = yup.object().shape({
   name: yup.string().required('Product name is required'),
   sku: yup.string().required('SKU is required'),
-  costPrice: yup.number().typeError('Cost must be a number').required('Cost price is required').min(0),
-  salesPrice: yup.number().typeError('Sales Price must be a number').required('Sales price is required').min(0),
-  onHandQty: yup.number().typeError('On hand quantity must be a number').required('Quantity is required').min(0),
+  costPrice: yup.number().transform((value) => (Number.isNaN(value) ? undefined : value)).required('Please enter a value').min(0, 'Cannot be negative'),
+  salesPrice: yup.number().transform((value) => (Number.isNaN(value) ? undefined : value)).required('Please enter a value').min(0, 'Cannot be negative'),
+  onHandQty: yup.number().transform((value) => (Number.isNaN(value) ? undefined : value)).required('Please enter a value').min(0, 'Cannot be negative').integer('Must be whole number'),
   procurementStrategy: yup.string().required('Procurement strategy is required'),
   procurementType: yup.string().required('Procurement type is required'),
 });

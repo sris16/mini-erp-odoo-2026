@@ -51,10 +51,10 @@ const schema = yup.object().shape({
   productName: yup.string().required('Product is required'),
   quantity: yup
     .number()
-    .typeError('Quantity must be a number')
-    .required('Quantity is required')
-    .positive('Quantity must be positive')
-    .integer(),
+    .transform((value) => (Number.isNaN(value) ? undefined : value))
+    .required('Please enter a value')
+    .min(1, 'Please enter a value greater than 0')
+    .integer('Must be a whole number'),
 });
 
 type PurchaseOrderFormData = yup.InferType<typeof schema>;
@@ -383,8 +383,11 @@ export default function Purchase() {
                 label="Quantity to Receive Now"
                 type="number"
                 fullWidth
-                value={receiveQty}
-                onChange={(e) => setReceiveQty(Math.max(1, parseInt(e.target.value) || 0))}
+                value={receiveQty === 0 ? '' : receiveQty}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setReceiveQty(val === '' ? 0 : parseInt(val) || 0);
+                }}
                 slotProps={{
                   htmlInput: {
                     min: 1,
