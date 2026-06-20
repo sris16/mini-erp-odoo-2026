@@ -189,6 +189,12 @@ export interface ReorderingRule {
   lastTriggered?: string;
 }
 
+export interface User {
+  id: number;
+  username: string;
+  role: string;
+}
+
 export interface ApiReorderingRule {
   id: number;
   product: {
@@ -677,6 +683,27 @@ export const createTransfer = createAsyncThunk(
 export const completeTransfer = createAsyncThunk('locations/completeTransfer', async (id: number) => {
   const response = await api.post(`/transfers/${id}/complete`);
   return response.data;
+});
+
+// User Management Thunks
+export const fetchUsers = createAsyncThunk('users/fetchUsers', async () => {
+  const response = await api.get('/users');
+  return response.data;
+});
+
+export const addUser = createAsyncThunk('users/addUser', async (user: any) => {
+  const response = await api.post('/users', user);
+  return response.data;
+});
+
+export const editUser = createAsyncThunk('users/editUser', async (user: { id: number; username: string; password?: string; role: string }) => {
+  const response = await api.put(`/users/${user.id}`, user);
+  return response.data;
+});
+
+export const deleteUser = createAsyncThunk('users/deleteUser', async (id: number) => {
+  await api.delete(`/users/${id}`);
+  return id;
 });
 
 // ================= SLICES =================
@@ -1453,6 +1480,46 @@ const locationsSlice = createSlice({
   },
 });
 
+// Users Slice
+interface UsersState {
+  users: User[];
+  loading: boolean;
+}
+const initialUsersState: UsersState = {
+  users: [],
+  loading: false,
+};
+const usersSlice = createSlice({
+  name: 'users',
+  initialState: initialUsersState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder.addCase(fetchUsers.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(fetchUsers.fulfilled, (state, action) => {
+      state.users = action.payload;
+      state.loading = false;
+    });
+    builder.addCase(fetchUsers.rejected, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(addUser.fulfilled, (state, action) => {
+      state.users.push(action.payload);
+    });
+    builder.addCase(editUser.fulfilled, (state, action) => {
+      const updated = action.payload;
+      const idx = state.users.findIndex((u) => u.id === updated.id);
+      if (idx !== -1) {
+        state.users[idx] = updated;
+      }
+    });
+    builder.addCase(deleteUser.fulfilled, (state, action) => {
+      state.users = state.users.filter((u) => u.id !== action.payload);
+    });
+  },
+});
+
 // ================= CONFIGURE STORE =================
 
 export const store = configureStore({
@@ -1472,6 +1539,7 @@ export const store = configureStore({
     invoices: invoicesSlice.reducer,
     bills: billsSlice.reducer,
     locations: locationsSlice.reducer,
+    users: usersSlice.reducer,
   },
 });
 
@@ -1497,3 +1565,4 @@ export const dashboardActions = { fetchDashboardKpis, fetchDashboardCharts };
 export const reorderingRulesActions = { fetchReorderingRules, addReorderingRule, editReorderingRule, deleteReorderingRule, runReorderingScheduler };
 export const invoicingActions = { fetchInvoices, createInvoiceFromSO, postInvoice, payInvoice, fetchBills, createBillFromPO, postBill, payBill };
 export const locationsActions = { fetchLocations, fetchLocationStocks, fetchTransfers, createTransfer, completeTransfer };
+export const usersActions = { fetchUsers, addUser, editUser, deleteUser };

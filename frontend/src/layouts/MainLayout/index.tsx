@@ -38,6 +38,7 @@ import {
   Logout as LogoutIcon,
   AccountCircle as UserIcon,
   Receipt as InvoicingIcon,
+  ManageAccounts as UsersIcon,
 } from '@mui/icons-material';
 
 import NotificationCenter from '../../components/common/NotificationCenter';
@@ -45,6 +46,49 @@ import CommandPalette from '../../components/common/CommandPalette';
 import { useAppSelector, useAppDispatch, authActions } from '../../store';
 
 const drawerWidth = 240;
+
+const prefetchPage = (path: string) => {
+  switch (path) {
+    case '/dashboard':
+      import('../../pages/Dashboard');
+      break;
+    case '/products':
+      import('../../pages/Products');
+      break;
+    case '/customers':
+      import('../../pages/Customers');
+      break;
+    case '/vendors':
+      import('../../pages/Vendors');
+      break;
+    case '/inventory':
+      import('../../pages/Inventory');
+      break;
+    case '/sales':
+      import('../../pages/Sales');
+      break;
+    case '/purchase':
+      import('../../pages/Purchase');
+      break;
+    case '/invoicing':
+      import('../../pages/Invoicing');
+      break;
+    case '/bom':
+      import('../../pages/BoM');
+      break;
+    case '/manufacturing':
+      import('../../pages/Manufacturing');
+      break;
+    case '/audit-logs':
+      import('../../pages/AuditLogs');
+      break;
+    case '/users':
+      import('../../pages/Users');
+      break;
+    default:
+      break;
+  }
+};
 
 interface MainLayoutProps {
   darkMode: boolean;
@@ -91,6 +135,7 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
     { text: 'BoM', path: '/bom', icon: <BoMIcon />, roles: ['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER'] },
     { text: 'Manufacturing', path: '/manufacturing', icon: <MfgIcon />, roles: ['ADMIN', 'OWNER', 'MANUFACTURING_USER', 'INVENTORY_MANAGER'] },
     { text: 'Audit Logs', path: '/audit-logs', icon: <AuditIcon />, roles: ['ADMIN', 'OWNER'] },
+    { text: 'Users', path: '/users', icon: <UsersIcon />, roles: ['ADMIN', 'OWNER'] },
   ].filter(item => !item.roles || item.roles.includes(userRole));
 
   // Breadcrumbs generation
@@ -252,6 +297,7 @@ export default function MainLayout({ darkMode, toggleDarkMode }: MainLayoutProps
                   <ListItemButton
                     component={RouterLink}
                     to={item.path}
+                    onMouseEnter={() => prefetchPage(item.path)}
                     sx={{
                       minHeight: 40,
                       justifyContent: open ? 'initial' : 'center',

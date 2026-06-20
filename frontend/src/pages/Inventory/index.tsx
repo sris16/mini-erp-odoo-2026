@@ -45,6 +45,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useAppSelector, useAppDispatch, inventoryActions, reorderingRulesActions, productsActions, locationsActions } from '../../store';
+import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 const ruleSchema = yup.object().shape({
   productId: yup.number().typeError('Product is required').required('Product is required'),
@@ -335,7 +336,7 @@ export default function Inventory() {
 
       {/* Search Filter */}
       <Box sx={{ mb: 3 }}>
-        <TextField
+        <DebouncedTextField
           placeholder={
             tabValue === 0
               ? 'Search stock by product...'
@@ -348,7 +349,7 @@ export default function Inventory() {
               : 'Search transfers by product or reference...'
           }
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(val) => setSearchTerm(val)}
           slotProps={{
             input: {
               startAdornment: <SearchIcon color="action" sx={{ mr: 1, fontSize: 20 }} />,

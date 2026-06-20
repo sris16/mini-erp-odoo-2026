@@ -44,6 +44,7 @@ import {
   invoicingActions,
   type SalesOrder,
 } from '../../store';
+import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 const schema = yup.object().shape({
   customerName: yup.string().required('Customer is required'),
@@ -176,10 +177,10 @@ export default function Sales() {
 
       <Card sx={{ borderColor: 'divider', mb: 4 }}>
         <Box sx={{ p: 2 }}>
-          <TextField
+          <DebouncedTextField
             placeholder="Search orders..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(val) => setSearchTerm(val)}
             slotProps={{
               input: {
                 startAdornment: <SearchIcon color="action" sx={{ mr: 1, fontSize: 20 }} />,

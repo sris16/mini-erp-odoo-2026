@@ -43,6 +43,7 @@ import {
   bomActions,
   productsActions,
 } from '../../store';
+import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 const schema = yup.object().shape({
   finishedProduct: yup.string().required('Finished product is required'),
@@ -155,10 +156,10 @@ export default function BoM() {
 
       <Card sx={{ borderColor: 'divider', mb: 4 }}>
         <Box sx={{ p: 2 }}>
-          <TextField
+          <DebouncedTextField
             placeholder="Search BoMs by finished product..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(val) => setSearchTerm(val)}
             slotProps={{
               input: {
                 startAdornment: <SearchIcon color="action" sx={{ mr: 1, fontSize: 20 }} />,

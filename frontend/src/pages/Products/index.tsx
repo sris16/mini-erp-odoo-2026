@@ -11,7 +11,6 @@ import {
   TableHead,
   TableRow,
   Paper,
-  TextField,
   IconButton,
   Dialog,
   DialogTitle,
@@ -25,6 +24,7 @@ import {
   Tooltip,
   Divider,
   Chip,
+  TextField,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -42,6 +42,7 @@ import {
   reorderingRulesActions,
   type Product,
 } from '../../store';
+import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 const schema = yup.object().shape({
   name: yup.string().required('Product name is required'),
@@ -160,10 +161,10 @@ export default function Products() {
 
       <Card sx={{ borderColor: 'divider', mb: 4 }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-          <TextField
+          <DebouncedTextField
             placeholder="Search products by name or SKU..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(val) => setSearchTerm(val)}
             slotProps={{
               input: {
                 startAdornment: <SearchIcon color="action" sx={{ mr: 1, fontSize: 20 }} />,

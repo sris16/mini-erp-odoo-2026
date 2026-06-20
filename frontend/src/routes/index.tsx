@@ -1,18 +1,21 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { LinearProgress } from '@mui/material';
 import MainLayout from '../layouts/MainLayout';
-import Login from '../pages/Login';
-import Dashboard from '../pages/Dashboard';
-import Products from '../pages/Products';
-import Customers from '../pages/Customers';
-import Vendors from '../pages/Vendors';
-import Inventory from '../pages/Inventory';
-import Sales from '../pages/Sales';
-import Purchase from '../pages/Purchase';
-import BoM from '../pages/BoM';
-import Manufacturing from '../pages/Manufacturing';
-import AuditLogs from '../pages/AuditLogs';
-import Invoicing from '../pages/Invoicing';
+
+const Login = lazy(() => import('../pages/Login'));
+const Dashboard = lazy(() => import('../pages/Dashboard'));
+const Products = lazy(() => import('../pages/Products'));
+const Customers = lazy(() => import('../pages/Customers'));
+const Vendors = lazy(() => import('../pages/Vendors'));
+const Inventory = lazy(() => import('../pages/Inventory'));
+const Sales = lazy(() => import('../pages/Sales'));
+const Purchase = lazy(() => import('../pages/Purchase'));
+const BoM = lazy(() => import('../pages/BoM'));
+const Manufacturing = lazy(() => import('../pages/Manufacturing'));
+const AuditLogs = lazy(() => import('../pages/AuditLogs'));
+const Invoicing = lazy(() => import('../pages/Invoicing'));
+const Users = lazy(() => import('../pages/Users'));
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -38,7 +41,8 @@ interface AppRoutesProps {
 
 export default function AppRoutes({ darkMode, toggleDarkMode }: AppRoutesProps) {
   return (
-    <Routes>
+    <Suspense fallback={<LinearProgress sx={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999 }} />}>
+      <Routes>
       {/* Public Route */}
       <Route path="/login" element={<Login />} />
 
@@ -120,10 +124,19 @@ export default function AppRoutes({ darkMode, toggleDarkMode }: AppRoutesProps) 
             </ProtectedRoute>
           } 
         />
+        <Route 
+          path="users" 
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'OWNER']}>
+              <Users />
+            </ProtectedRoute>
+          } 
+        />
       </Route>
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }

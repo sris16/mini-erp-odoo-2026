@@ -34,6 +34,7 @@ import {
   useAppSelector,
   invoicingActions,
 } from '../../store';
+import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 export default function Invoicing() {
   const dispatch = useAppDispatch();
@@ -151,10 +152,10 @@ export default function Invoicing() {
 
       <Card sx={{ borderColor: 'divider', mb: 4 }}>
         <Box sx={{ p: 2 }}>
-          <TextField
+          <DebouncedTextField
             placeholder={activeTab === 0 ? "Search invoices..." : "Search bills..."}
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(val) => setSearchTerm(val)}
             slotProps={{
               input: {
                 startAdornment: <SearchIcon color="action" sx={{ mr: 1, fontSize: 20 }} />,

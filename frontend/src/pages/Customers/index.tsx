@@ -36,6 +36,7 @@ import {
   customersActions,
   type Customer,
 } from '../../store';
+import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 const schema = yup.object().shape({
   name: yup.string().required('Customer name is required'),
@@ -139,10 +140,10 @@ export default function Customers() {
 
       <Card sx={{ borderColor: 'divider', mb: 4 }}>
         <Box sx={{ p: 2 }}>
-          <TextField
+          <DebouncedTextField
             placeholder="Search customers..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(val) => setSearchTerm(val)}
             slotProps={{
               input: {
                 startAdornment: <SearchIcon color="action" sx={{ mr: 1, fontSize: 20 }} />,
