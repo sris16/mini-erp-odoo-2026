@@ -255,7 +255,7 @@ public class StockLedgerService {
             for (SalesOrderLine line : so.getLines()) {
                 int remaining = line.getQtyOrdered() - (line.getQtyDelivered() != null ? line.getQtyDelivered() : 0);
                 if (remaining > 0 && line.getProduct().getProcurementStrategy() == ProcurementStrategy.MTS) {
-                    demands.add(new Demand(line.getProduct().getId(), remaining, date, "SO-" + so.getId()));
+                    demands.add(new Demand(line.getProduct().getId(), remaining, date));
                 }
             }
         }
@@ -270,7 +270,7 @@ public class StockLedgerService {
                 List<BomComponent> components = bomComponentRepository.findByBomId(mo.getBom().getId());
                 for (BomComponent comp : components) {
                     int totalQtyNeeded = comp.getQuantity() * mo.getQty();
-                    demands.add(new Demand(comp.getComponent().getId(), totalQtyNeeded, date, "MO-" + mo.getId()));
+                    demands.add(new Demand(comp.getComponent().getId(), totalQtyNeeded, date));
                 }
             }
         }
@@ -317,19 +317,16 @@ public class StockLedgerService {
         private final Long productId;
         private final int qtyNeeded;
         private final LocalDateTime date;
-        private final String source;
 
-        public Demand(Long productId, int qtyNeeded, LocalDateTime date, String source) {
+        public Demand(Long productId, int qtyNeeded, LocalDateTime date) {
             this.productId = productId;
             this.qtyNeeded = qtyNeeded;
             this.date = date;
-            this.source = source;
         }
 
         public Long getProductId() { return productId; }
         public int getQtyNeeded() { return qtyNeeded; }
         public LocalDateTime getDate() { return date; }
-        public String getSource() { return source; }
     }
 
     private String getCurrentUsername() {

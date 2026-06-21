@@ -4,7 +4,6 @@ import com.minierp.backend.model.*;
 import com.minierp.backend.repository.AuditLogRepository;
 import com.minierp.backend.repository.ProductRepository;
 import com.minierp.backend.repository.PurchaseOrderRepository;
-import com.minierp.backend.repository.SalesOrderRepository;
 import com.minierp.backend.dto.PartialReceiptRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -18,18 +17,15 @@ public class PurchaseOrderService {
 
     private final PurchaseOrderRepository purchaseOrderRepository;
     private final ProductRepository productRepository;
-    private final SalesOrderRepository salesOrderRepository;
     private final StockLedgerService stockLedgerService;
     private final AuditLogRepository auditLogRepository;
 
     public PurchaseOrderService(PurchaseOrderRepository purchaseOrderRepository,
                                 ProductRepository productRepository,
-                                SalesOrderRepository salesOrderRepository,
                                 StockLedgerService stockLedgerService,
                                 AuditLogRepository auditLogRepository) {
         this.purchaseOrderRepository = purchaseOrderRepository;
         this.productRepository = productRepository;
-        this.salesOrderRepository = salesOrderRepository;
         this.stockLedgerService = stockLedgerService;
         this.auditLogRepository = auditLogRepository;
     }
