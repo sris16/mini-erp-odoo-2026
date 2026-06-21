@@ -700,6 +700,11 @@ export default function Inventory() {
                     fullWidth
                     error={!!errors.minQty}
                     helperText={errors.minQty ? errors.minQty.message : 'When stock drops below this value, replenishment is triggered.'}
+                    slotProps={{
+                      htmlInput: {
+                        min: 0,
+                      },
+                    }}
                   />
                 )}
               />
@@ -715,6 +720,11 @@ export default function Inventory() {
                     fullWidth
                     error={!!errors.maxQty}
                     helperText={errors.maxQty ? errors.maxQty.message : 'The target stock level to replenish back up to.'}
+                    slotProps={{
+                      htmlInput: {
+                        min: 1,
+                      },
+                    }}
                   />
                 )}
               />
@@ -823,6 +833,11 @@ export default function Inventory() {
                     fullWidth
                     error={!!transferErrors.qty}
                     helperText={transferErrors.qty ? String(transferErrors.qty.message) : 'Number of units to relocate.'}
+                    slotProps={{
+                      htmlInput: {
+                        min: 1,
+                      },
+                    }}
                   />
                 )}
               />

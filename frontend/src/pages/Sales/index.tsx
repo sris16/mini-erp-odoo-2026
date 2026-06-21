@@ -31,8 +31,9 @@ import {
   CheckCircle as ApproveIcon,
   Search as SearchIcon,
   Receipt as InvoiceIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { useForm, Controller, useWatch } from 'react-hook-form';
+import { useForm, Controller, useWatch, useFieldArray } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import {
@@ -48,13 +49,21 @@ import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 const schema = yup.object().shape({
   customerName: yup.string().required('Customer is required'),
-  productName: yup.string().required('Product is required'),
-  quantity: yup
-    .number()
-    .transform((value) => (Number.isNaN(value) ? undefined : value))
-    .required('Please enter a value')
-    .min(1, 'Please enter a value greater than 0')
-    .integer('Must be a whole number'),
+  lines: yup
+    .array()
+    .of(
+      yup.object().shape({
+        productId: yup.number().typeError('Product is required').required('Product is required'),
+        qtyOrdered: yup
+          .number()
+          .transform((value) => (Number.isNaN(value) ? undefined : value))
+          .required('Please enter a value')
+          .min(1, 'Please enter a value greater than 0')
+          .integer('Must be a whole number'),
+      })
+    )
+    .min(1, 'At least one product line is required')
+    .required(),
 });
 
 type SalesOrderFormData = yup.InferType<typeof schema>;
@@ -70,7 +79,7 @@ export default function Sales() {
   const [open, setOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [activeDeliveryOrder, setActiveDeliveryOrder] = useState<SalesOrder | null>(null);
-  const [deliveryQty, setDeliveryQty] = useState<number>(0);
+  const [deliveryQuantities, setDeliveryQuantities] = useState<Record<number, number>>({});
 
   useEffect(() => {
     dispatch(salesActions.fetchSalesOrders());
@@ -89,22 +98,26 @@ export default function Sales() {
     resolver: yupResolver(schema) as any,
     defaultValues: {
       customerName: '',
-      productName: '',
-      quantity: 1,
+      lines: [{ productId: undefined as unknown as number, qtyOrdered: 1 }],
     },
   });
 
-  const selectedProduct = useWatch({ control, name: 'productName' });
-  const enteredQty = useWatch({ control, name: 'quantity' });
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'lines',
+  });
 
-  const currentProduct = products.find((p) => p.name === selectedProduct);
-  const calculatedTotal = currentProduct ? currentProduct.salesPrice * (enteredQty || 0) : 0;
+  const selectedLines = useWatch({ control, name: 'lines' }) || [];
+  const calculatedTotal = selectedLines.reduce((sum, line) => {
+    if (!line?.productId) return sum;
+    const prod = products.find((p) => p.id === line.productId);
+    return sum + (prod ? prod.salesPrice * (line.qtyOrdered || 0) : 0);
+  }, 0);
 
   const handleOpenCreate = () => {
     reset({
       customerName: '',
-      productName: '',
-      quantity: 1,
+      lines: [{ productId: undefined as unknown as number, qtyOrdered: 1 }],
     });
     setOpen(true);
   };
@@ -114,15 +127,19 @@ export default function Sales() {
   };
 
   const onSubmit = (data: SalesOrderFormData) => {
-    const totalVal = currentProduct ? currentProduct.salesPrice * data.quantity : 0;
-    
+    const linesPayload = data.lines.map((line) => {
+      const prod = products.find((p) => p.id === line.productId);
+      return {
+        productId: line.productId,
+        qtyOrdered: line.qtyOrdered,
+        unitPrice: prod ? prod.salesPrice : 0,
+      };
+    });
+
     dispatch(
       salesActions.addSalesOrder({
         customerName: data.customerName,
-        productName: data.productName,
-        quantity: data.quantity,
-        status: 'Draft',
-        total: totalVal,
+        lines: linesPayload,
       })
     );
 
@@ -134,7 +151,12 @@ export default function Sales() {
       dispatch(salesActions.confirmSalesOrder(row.id));
     } else if (row.status === 'Pending Delivery') {
       setActiveDeliveryOrder(row);
-      setDeliveryQty(row.quantity - row.qtyDelivered);
+      const initialQtys: Record<number, number> = {};
+      row.lines?.forEach((line) => {
+        const remaining = line.qtyOrdered - line.qtyDelivered;
+        initialQtys[line.productId] = Math.max(0, remaining);
+      });
+      setDeliveryQuantities(initialQtys);
       setDeliveryOpen(true);
     }
   };
@@ -209,10 +231,30 @@ export default function Sales() {
                   <TableRow key={row.soNumber} hover>
                     <TableCell sx={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.soNumber}</TableCell>
                     <TableCell>{row.customerName}</TableCell>
-                    <TableCell>{row.productName}</TableCell>
+                    <TableCell>
+                      {row.lines && row.lines.length > 1 ? (
+                        <Tooltip
+                          title={
+                            <Box sx={{ p: 0.5 }}>
+                              {row.lines.map((line, idx) => (
+                                <Typography key={idx} variant="caption" sx={{ display: 'block', color: '#fff' }}>
+                                  • {line.productName} ({line.qtyOrdered} units)
+                                </Typography>
+                              ))}
+                            </Box>
+                          }
+                        >
+                          <span style={{ cursor: 'pointer', borderBottom: '1px dashed' }}>
+                            {row.productName}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        row.productName
+                      )}
+                    </TableCell>
                     <TableCell align="right">
                       {row.qtyDelivered > 0 && row.qtyDelivered < row.quantity ? (
-                        <Tooltip title={`Delivered: ${row.qtyDelivered} / ${row.quantity} units`}>
+                        <Tooltip title={`Delivered: ${row.qtyDelivered} / ${row.quantity} total units`}>
                           <Typography variant="body2" sx={{ fontWeight: 500 }}>
                             {row.qtyDelivered} / {row.quantity} units
                           </Typography>
@@ -298,43 +340,72 @@ export default function Sales() {
                 )}
               </FormControl>
 
-              <FormControl fullWidth error={!!errors.productName}>
-                <InputLabel shrink>Product</InputLabel>
-                <Controller
-                  name="productName"
-                  control={control}
-                  render={({ field }) => (
-                    <Select {...field} label="Product" displayEmpty>
-                      <MenuItem value="" disabled>Select a product</MenuItem>
-                      {products.map((p) => (
-                        <MenuItem key={p.id} value={p.name}>
-                          {p.name} (${p.salesPrice.toFixed(2)})
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  )}
-                />
-                {errors.productName && (
-                  <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
-                    {errors.productName.message}
-                  </Typography>
-                )}
-              </FormControl>
+              <Divider />
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                Order Products
+              </Typography>
 
-              <Controller
-                name="quantity"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Quantity"
-                    type="number"
-                    fullWidth
-                    error={!!errors.quantity}
-                    helperText={errors.quantity?.message}
+              {fields.map((field, index) => (
+                <Stack direction="row" spacing={2} key={field.id} sx={{ alignItems: 'flex-start' }}>
+                  <FormControl fullWidth error={!!errors.lines?.[index]?.productId}>
+                    <InputLabel shrink>Product</InputLabel>
+                    <Controller
+                      name={`lines.${index}.productId`}
+                      control={control}
+                      render={({ field: subField }) => (
+                        <Select {...subField} label="Product" displayEmpty value={subField.value ?? ''}>
+                          <MenuItem value="" disabled>Select product</MenuItem>
+                          {products.map((p) => (
+                            <MenuItem key={p.id} value={p.id}>
+                              {p.name} (${p.salesPrice.toFixed(2)})
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      )}
+                    />
+                    {errors.lines?.[index]?.productId && (
+                      <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                        {errors.lines?.[index]?.productId?.message}
+                      </Typography>
+                    )}
+                  </FormControl>
+
+                  <Controller
+                    name={`lines.${index}.qtyOrdered`}
+                    control={control}
+                    render={({ field: subField }) => (
+                      <TextField
+                        {...subField}
+                        label="Quantity"
+                        type="number"
+                        sx={{ width: 130 }}
+                        error={!!errors.lines?.[index]?.qtyOrdered}
+                        helperText={errors.lines?.[index]?.qtyOrdered?.message}
+                        slotProps={{
+                          htmlInput: {
+                            min: 1,
+                          },
+                        }}
+                      />
+                    )}
                   />
-                )}
-              />
+
+                  {fields.length > 1 && (
+                    <IconButton color="error" onClick={() => remove(index)} sx={{ mt: 1 }}>
+                      <DeleteIcon />
+                    </IconButton>
+                  )}
+                </Stack>
+              ))}
+
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => append({ productId: '' as unknown as number, qtyOrdered: 1 })}
+                sx={{ alignSelf: 'flex-start', mt: 1 }}
+              >
+                Add Product Line
+              </Button>
 
               <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 2 }}>
                 <Typography variant="subtitle2" color="text.secondary">Estimated Order Total:</Typography>
@@ -357,44 +428,63 @@ export default function Sales() {
       </Dialog>
 
       {/* Delivery Confirmation Dialog */}
-      <Dialog open={deliveryOpen} onClose={() => setDeliveryOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={deliveryOpen} onClose={() => setDeliveryOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>Deliver Products</DialogTitle>
         <Divider />
         <DialogContent>
           {activeDeliveryOrder && (
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                {activeDeliveryOrder.productName}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                SO Number: {activeDeliveryOrder.soNumber}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Total Ordered: {activeDeliveryOrder.quantity} units
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Already Shipped: {activeDeliveryOrder.qtyDelivered} units
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Remaining to Ship: {activeDeliveryOrder.quantity - activeDeliveryOrder.qtyDelivered} units
+            <Stack spacing={3} sx={{ mt: 1 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                SO Number: {activeDeliveryOrder.soNumber} | Customer: {activeDeliveryOrder.customerName}
               </Typography>
 
-              <TextField
-                label="Quantity to Ship Now"
-                type="number"
-                fullWidth
-                value={deliveryQty === 0 ? '' : deliveryQty}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDeliveryQty(val === '' ? 0 : parseInt(val) || 0);
-                }}
-                slotProps={{
-                  htmlInput: {
-                    min: 1,
-                    max: activeDeliveryOrder.quantity - activeDeliveryOrder.qtyDelivered,
-                  }
-                }}
-              />
+              <TableContainer component={Paper} variant="outlined" elevation={0}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Product</TableCell>
+                      <TableCell align="right">Ordered</TableCell>
+                      <TableCell align="right">Delivered</TableCell>
+                      <TableCell align="right">Remaining</TableCell>
+                      <TableCell sx={{ width: 130 }} align="right">Deliver Now</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {activeDeliveryOrder.lines?.map((line) => {
+                      const remaining = line.qtyOrdered - line.qtyDelivered;
+                      return (
+                        <TableRow key={line.productId}>
+                          <TableCell sx={{ fontWeight: 500 }}>{line.productName}</TableCell>
+                          <TableCell align="right">{line.qtyOrdered}</TableCell>
+                          <TableCell align="right">{line.qtyDelivered}</TableCell>
+                          <TableCell align="right">{remaining}</TableCell>
+                          <TableCell align="right">
+                            <TextField
+                              size="small"
+                              type="number"
+                              value={deliveryQuantities[line.productId] ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const numericVal = val === '' ? 0 : parseInt(val) || 0;
+                                setDeliveryQuantities((prev) => ({
+                                  ...prev,
+                                  [line.productId]: numericVal,
+                                }));
+                              }}
+                              slotProps={{
+                                htmlInput: {
+                                  min: 0,
+                                  max: remaining,
+                                }
+                              }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </Stack>
           )}
         </DialogContent>
@@ -406,15 +496,22 @@ export default function Sales() {
           <Button
             onClick={() => {
               if (activeDeliveryOrder) {
+                const partials = Object.entries(deliveryQuantities)
+                  .map(([prodId, qty]) => ({
+                    productId: parseInt(prodId),
+                    qtyToDeliver: qty,
+                  }))
+                  .filter((p) => p.qtyToDeliver > 0);
+
+                if (partials.length === 0) {
+                  alert('Please enter at least one quantity to deliver');
+                  return;
+                }
+
                 dispatch(
                   salesActions.deliverSalesOrder({
                     id: activeDeliveryOrder.id,
-                    partials: [
-                      {
-                        productId: activeDeliveryOrder.productId,
-                        qtyToDeliver: deliveryQty,
-                      },
-                    ],
+                    partials,
                   })
                 ).then(() => {
                   dispatch(salesActions.fetchSalesOrders());
@@ -424,7 +521,16 @@ export default function Sales() {
             }}
             variant="contained"
             color="success"
-            disabled={!activeDeliveryOrder || deliveryQty <= 0 || deliveryQty > (activeDeliveryOrder.quantity - activeDeliveryOrder.qtyDelivered)}
+            disabled={
+              !activeDeliveryOrder ||
+              Object.values(deliveryQuantities).every((q) => q <= 0) ||
+              Object.entries(deliveryQuantities).some(([prodId, q]) => {
+                const line = activeDeliveryOrder.lines?.find((l) => l.productId === parseInt(prodId));
+                if (!line) return false;
+                const remaining = line.qtyOrdered - line.qtyDelivered;
+                return q > remaining || q < 0;
+              })
+            }
           >
             Confirm Shipment
           </Button>

@@ -50,6 +50,14 @@ export interface StockLedgerEntry {
   reference: string;
 }
 
+export interface SalesOrderLine {
+  productId: number;
+  productName: string;
+  qtyOrdered: number;
+  qtyDelivered: number;
+  unitPrice: number;
+}
+
 export interface SalesOrder {
   id: number;
   soNumber: string;
@@ -60,6 +68,15 @@ export interface SalesOrder {
   qtyDelivered: number;
   status: string; // Draft, Pending Delivery, Completed, Cancelled
   total: number;
+  lines?: SalesOrderLine[];
+}
+
+export interface PurchaseOrderLine {
+  productId: number;
+  productName: string;
+  qtyOrdered: number;
+  qtyReceived: number;
+  unitPrice: number;
 }
 
 export interface PurchaseOrder {
@@ -72,6 +89,7 @@ export interface PurchaseOrder {
   qtyReceived: number;
   status: string; // Draft, Approved, Received, Cancelled
   total: number;
+  lines?: PurchaseOrderLine[];
 }
 
 export interface BoMItem {
@@ -278,6 +296,72 @@ export interface ApiPurchaseOrder {
   lines: ApiPurchaseOrderLine[];
 }
 
+export interface ApiInvoiceLine {
+  id: number;
+  productId: number;
+  productName?: string;
+  quantity: number;
+  unitPrice: number;
+  product?: {
+    name: string;
+  };
+}
+
+export interface ApiInvoice {
+  id: number;
+  invoiceNumber?: string;
+  salesOrderId?: number;
+  customerName: string;
+  status: string;
+  issueDate: string;
+  totalAmount: number;
+  amountPaid: number;
+  lines: ApiInvoiceLine[];
+}
+
+export interface ApiVendorBillLine {
+  id: number;
+  productId: number;
+  productName?: string;
+  quantity: number;
+  unitPrice: number;
+  product?: {
+    name: string;
+  };
+}
+
+export interface ApiVendorBill {
+  id: number;
+  billNumber?: string;
+  purchaseOrderId?: number;
+  vendorName: string;
+  status: string;
+  issueDate: string;
+  totalAmount: number;
+  amountPaid: number;
+  lines: ApiVendorBillLine[];
+}
+
+export interface ApiLocationStock {
+  id: number;
+  product: ApiProduct;
+  location: WarehouseLocation;
+  onHandQty: number;
+  reservedQty: number;
+}
+
+export interface ApiStockTransfer {
+  id: number;
+  transferNumber: string;
+  product: ApiProduct;
+  qty: number;
+  sourceLocation: WarehouseLocation;
+  destinationLocation: WarehouseLocation;
+  status: 'DRAFT' | 'COMPLETED' | 'CANCELLED';
+  createdDate: string;
+  completedDate?: string;
+}
+
 export interface ApiBoMItem {
   id: number;
   finishedProductName: string;
@@ -404,21 +488,11 @@ export const fetchSalesOrders = createAsyncThunk('sales/fetch', async () => {
 
 export const addSalesOrder = createAsyncThunk(
   'sales/add',
-  async (order: { customerName: string; productName: string; quantity: number; status: string; total: number }, { getState }) => {
-    const state = getState() as RootState;
-    const product = state.products.items.find((p) => p.name === order.productName);
-    if (!product) throw new Error('Product not found in store catalog');
-
+  async (order: { customerName: string; lines: { productId: number; qtyOrdered: number; unitPrice: number }[] }) => {
     const payload = {
       customerName: order.customerName,
       status: 'DRAFT',
-      lines: [
-        {
-          productId: product.id,
-          qtyOrdered: order.quantity,
-          unitPrice: product.salesPrice,
-        },
-      ],
+      lines: order.lines,
     };
     const response = await api.post('/sales', payload);
     return response.data;
@@ -451,21 +525,11 @@ export const fetchPurchaseOrders = createAsyncThunk('purchase/fetch', async () =
 
 export const addPurchaseOrder = createAsyncThunk(
   'purchase/add',
-  async (order: { vendorName: string; productName: string; quantity: number; status: string; total: number }, { getState }) => {
-    const state = getState() as RootState;
-    const product = state.products.items.find((p) => p.name === order.productName);
-    if (!product) throw new Error('Product not found in store catalog');
-
+  async (order: { vendorName: string; lines: { productId: number; qtyOrdered: number; unitPrice: number }[] }) => {
     const payload = {
       vendorName: order.vendorName,
       status: 'DRAFT',
-      lines: [
-        {
-          productId: product.id,
-          qtyOrdered: order.quantity,
-          unitPrice: product.costPrice,
-        },
-      ],
+      lines: order.lines,
     };
     const response = await api.post('/purchase', payload);
     return response.data;
@@ -691,7 +755,7 @@ export const fetchUsers = createAsyncThunk('users/fetchUsers', async () => {
   return response.data;
 });
 
-export const addUser = createAsyncThunk('users/addUser', async (user: any) => {
+export const addUser = createAsyncThunk('users/addUser', async (user: Omit<User, 'id'> & { password?: string }) => {
   const response = await api.post('/users', user);
   return response.data;
 });
@@ -866,7 +930,6 @@ interface SalesState {
   orders: SalesOrder[];
 }
 const mapSalesOrder = (so: ApiSalesOrder): SalesOrder => {
-  const line = so.lines[0];
   const totalVal = so.lines.reduce((sum: number, l: ApiSalesOrderLine) => sum + l.unitPrice * l.qtyOrdered, 0);
   let statusText = 'Draft';
   if (so.status === 'CONFIRMED') statusText = 'Pending Delivery';
@@ -874,16 +937,30 @@ const mapSalesOrder = (so: ApiSalesOrder): SalesOrder => {
   else if (so.status === 'PARTIALLY_DELIVERED') statusText = 'Pending Delivery';
   else if (so.status === 'CANCELLED') statusText = 'Cancelled';
 
+  const lines = (so.lines || []).map((l: ApiSalesOrderLine) => ({
+    productId: l.productId,
+    productName: l.product?.name || 'N/A',
+    qtyOrdered: l.qtyOrdered,
+    qtyDelivered: l.qtyDelivered || 0,
+    unitPrice: l.unitPrice,
+  }));
+
+  const firstLine = lines[0];
+  const totalQty = lines.reduce((sum, l) => sum + l.qtyOrdered, 0);
+  const totalDelivered = lines.reduce((sum, l) => sum + l.qtyDelivered, 0);
+  const summaryName = lines.length > 1 ? `${firstLine?.productName} (+${lines.length - 1} more)` : (firstLine?.productName || 'N/A');
+
   return {
     id: so.id,
     soNumber: 'SO-00' + so.id,
     customerName: so.customerName,
-    productId: line?.productId || 0,
-    productName: line?.product?.name || 'N/A',
-    quantity: line?.qtyOrdered || 0,
-    qtyDelivered: line?.qtyDelivered || 0,
+    productId: firstLine?.productId || 0,
+    productName: summaryName,
+    quantity: totalQty,
+    qtyDelivered: totalDelivered,
     status: statusText,
     total: totalVal,
+    lines,
   };
 };
 
@@ -921,23 +998,36 @@ interface PurchaseState {
   orders: PurchaseOrder[];
 }
 const mapPurchaseOrder = (po: ApiPurchaseOrder): PurchaseOrder => {
-  const line = po.lines[0];
   const totalVal = po.lines.reduce((sum: number, l: ApiPurchaseOrderLine) => sum + l.unitPrice * l.qtyOrdered, 0);
   let statusText = 'Draft';
   if (po.status === 'CONFIRMED' || po.status === 'PARTIALLY_RECEIVED') statusText = 'Approved';
   else if (po.status === 'FULLY_RECEIVED') statusText = 'Received';
   else if (po.status === 'CANCELLED') statusText = 'Cancelled';
 
+  const lines = (po.lines || []).map((l: ApiPurchaseOrderLine) => ({
+    productId: l.productId,
+    productName: l.product?.name || 'N/A',
+    qtyOrdered: l.qtyOrdered,
+    qtyReceived: l.qtyReceived || 0,
+    unitPrice: l.unitPrice,
+  }));
+
+  const firstLine = lines[0];
+  const totalQty = lines.reduce((sum, l) => sum + l.qtyOrdered, 0);
+  const totalReceived = lines.reduce((sum, l) => sum + l.qtyReceived, 0);
+  const summaryName = lines.length > 1 ? `${firstLine?.productName} (+${lines.length - 1} more)` : (firstLine?.productName || 'N/A');
+
   return {
     id: po.id,
     poNumber: 'PO-00' + po.id,
     vendorName: po.vendorName,
-    productId: line?.productId || 0,
-    productName: line?.product?.name || 'N/A',
-    quantity: line?.qtyOrdered || 0,
-    qtyReceived: line?.qtyReceived || 0,
+    productId: firstLine?.productId || 0,
+    productName: summaryName,
+    quantity: totalQty,
+    qtyReceived: totalReceived,
     status: statusText,
     total: totalVal,
+    lines,
   };
 };
 
@@ -1191,10 +1281,10 @@ const invoicesSlice = createSlice({
     });
     builder.addCase(fetchInvoices.fulfilled, (state, action) => {
       state.loading = false;
-      state.items = action.payload.map((inv: any) => ({
+      state.items = (action.payload as ApiInvoice[]).map((inv) => ({
         ...inv,
         invoiceNumber: inv.invoiceNumber || `INV-00${inv.id}`,
-        lines: inv.lines.map((l: any) => ({
+        lines: inv.lines.map((l) => ({
           ...l,
           productName: l.product?.name || l.productName || 'N/A',
         })),
@@ -1204,24 +1294,24 @@ const invoicesSlice = createSlice({
       state.loading = false;
     });
     builder.addCase(createInvoiceFromSO.fulfilled, (state, action) => {
-      const inv = action.payload;
+      const inv = action.payload as ApiInvoice;
       state.items.unshift({
         ...inv,
         invoiceNumber: inv.invoiceNumber || `INV-00${inv.id}`,
-        lines: inv.lines.map((l: any) => ({
+        lines: inv.lines.map((l) => ({
           ...l,
           productName: l.product?.name || l.productName || 'N/A',
         })),
       });
     });
     builder.addCase(postInvoice.fulfilled, (state, action) => {
-      const updated = action.payload;
+      const updated = action.payload as ApiInvoice;
       const idx = state.items.findIndex((i) => i.id === updated.id);
       if (idx !== -1) {
         state.items[idx] = {
           ...updated,
           invoiceNumber: updated.invoiceNumber || `INV-00${updated.id}`,
-          lines: updated.lines.map((l: any) => ({
+          lines: updated.lines.map((l) => ({
             ...l,
             productName: l.product?.name || l.productName || 'N/A',
           })),
@@ -1229,13 +1319,13 @@ const invoicesSlice = createSlice({
       }
     });
     builder.addCase(payInvoice.fulfilled, (state, action) => {
-      const updated = action.payload;
+      const updated = action.payload as ApiInvoice;
       const idx = state.items.findIndex((i) => i.id === updated.id);
       if (idx !== -1) {
         state.items[idx] = {
           ...updated,
           invoiceNumber: updated.invoiceNumber || `INV-00${updated.id}`,
-          lines: updated.lines.map((l: any) => ({
+          lines: updated.lines.map((l) => ({
             ...l,
             productName: l.product?.name || l.productName || 'N/A',
           })),
@@ -1260,10 +1350,10 @@ const billsSlice = createSlice({
     });
     builder.addCase(fetchBills.fulfilled, (state, action) => {
       state.loading = false;
-      state.items = action.payload.map((bill: any) => ({
+      state.items = (action.payload as ApiVendorBill[]).map((bill) => ({
         ...bill,
         billNumber: bill.billNumber || `BILL-00${bill.id}`,
-        lines: bill.lines.map((l: any) => ({
+        lines: bill.lines.map((l) => ({
           ...l,
           productName: l.product?.name || l.productName || 'N/A',
         })),
@@ -1273,24 +1363,24 @@ const billsSlice = createSlice({
       state.loading = false;
     });
     builder.addCase(createBillFromPO.fulfilled, (state, action) => {
-      const bill = action.payload;
+      const bill = action.payload as ApiVendorBill;
       state.items.unshift({
         ...bill,
         billNumber: bill.billNumber || `BILL-00${bill.id}`,
-        lines: bill.lines.map((l: any) => ({
+        lines: bill.lines.map((l) => ({
           ...l,
           productName: l.product?.name || l.productName || 'N/A',
         })),
       });
     });
     builder.addCase(postBill.fulfilled, (state, action) => {
-      const updated = action.payload;
+      const updated = action.payload as ApiVendorBill;
       const idx = state.items.findIndex((i) => i.id === updated.id);
       if (idx !== -1) {
         state.items[idx] = {
           ...updated,
           billNumber: updated.billNumber || `BILL-00${updated.id}`,
-          lines: updated.lines.map((l: any) => ({
+          lines: updated.lines.map((l) => ({
             ...l,
             productName: l.product?.name || l.productName || 'N/A',
           })),
@@ -1298,13 +1388,13 @@ const billsSlice = createSlice({
       }
     });
     builder.addCase(payBill.fulfilled, (state, action) => {
-      const updated = action.payload;
+      const updated = action.payload as ApiVendorBill;
       const idx = state.items.findIndex((i) => i.id === updated.id);
       if (idx !== -1) {
         state.items[idx] = {
           ...updated,
           billNumber: updated.billNumber || `BILL-00${updated.id}`,
-          lines: updated.lines.map((l: any) => ({
+          lines: updated.lines.map((l) => ({
             ...l,
             productName: l.product?.name || l.productName || 'N/A',
           })),
@@ -1385,7 +1475,7 @@ const locationsSlice = createSlice({
       state.locations = action.payload;
     });
     builder.addCase(fetchLocationStocks.fulfilled, (state, action) => {
-      state.stocks = action.payload.map((s: any) => ({
+      state.stocks = (action.payload as ApiLocationStock[]).map((s) => ({
         id: s.id,
         product: {
           id: s.product.id,
@@ -1394,7 +1484,7 @@ const locationsSlice = createSlice({
           costPrice: s.product.costPrice,
           salesPrice: s.product.salesPrice,
           onHandQty: s.product.onHandQty,
-          reservedQty: s.product.reservedQty,
+          reservedQty: s.product.reservedQty || 0,
           procurementStrategy: s.product.procurementStrategy,
           procurementType: s.product.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
         },
@@ -1404,7 +1494,7 @@ const locationsSlice = createSlice({
       }));
     });
     builder.addCase(fetchTransfers.fulfilled, (state, action) => {
-      state.transfers = action.payload.map((t: any) => ({
+      state.transfers = (action.payload as ApiStockTransfer[]).map((t) => ({
         id: t.id,
         transferNumber: t.transferNumber,
         product: {
@@ -1414,7 +1504,7 @@ const locationsSlice = createSlice({
           costPrice: t.product.costPrice,
           salesPrice: t.product.salesPrice,
           onHandQty: t.product.onHandQty,
-          reservedQty: t.product.reservedQty,
+          reservedQty: t.product.reservedQty || 0,
           procurementStrategy: t.product.procurementStrategy,
           procurementType: t.product.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased',
         },

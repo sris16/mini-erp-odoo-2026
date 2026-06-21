@@ -343,6 +343,11 @@ export default function Manufacturing() {
                     fullWidth
                     error={!!errors.quantity}
                     helperText={errors.quantity?.message}
+                    slotProps={{
+                      htmlInput: {
+                        min: 1,
+                      },
+                    }}
                   />
                 )}
               />

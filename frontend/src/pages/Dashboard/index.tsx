@@ -64,14 +64,26 @@ import {
 } from '../../store';
 import SettingsDialog from '../../components/common/SettingsDialog';
 
+interface DashboardSettings {
+  showKpis: boolean;
+  showSalesTrend: boolean;
+  showInventoryStatus: boolean;
+  showOrderStatuses: boolean;
+  showLowStockAlerts: boolean;
+  showTopVendors: boolean;
+  showTopCustomers: boolean;
+  showMfgStatuses: boolean;
+  layoutDensity: string;
+}
+
 export default function Dashboard() {
   const theme = useTheme();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState(() => {
-    const defaultSettings = {
+  const [settings, setSettings] = useState<DashboardSettings>(() => {
+    const defaultSettings: DashboardSettings = {
       showKpis: true,
       showSalesTrend: true,
       showInventoryStatus: true,
@@ -85,8 +97,9 @@ export default function Dashboard() {
     const saved = localStorage.getItem('dashboardSettings');
     if (saved) {
       try {
-        return { ...defaultSettings, ...JSON.parse(saved) };
-      } catch (_e) {
+        const parsed = JSON.parse(saved) as Partial<DashboardSettings>;
+        return { ...defaultSettings, ...parsed };
+      } catch {
         return defaultSettings;
       }
     }
@@ -99,8 +112,8 @@ export default function Dashboard() {
       const updated = localStorage.getItem('dashboardSettings');
       if (updated) {
         try {
-          setSettings((prev: any) => ({ ...prev, ...JSON.parse(updated) }));
-        } catch (_e) {
+          setSettings((prev) => ({ ...prev, ...JSON.parse(updated) }));
+        } catch {
           // ignore parsing error
         }
       }

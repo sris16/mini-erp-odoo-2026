@@ -31,8 +31,9 @@ import {
   CheckCircle as ApproveIcon,
   Search as SearchIcon,
   Receipt as BillIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { useForm, Controller, useWatch } from 'react-hook-form';
+import { useForm, Controller, useWatch, useFieldArray } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import {
@@ -48,13 +49,21 @@ import DebouncedTextField from '../../components/common/DebouncedTextField';
 
 const schema = yup.object().shape({
   vendorName: yup.string().required('Vendor is required'),
-  productName: yup.string().required('Product is required'),
-  quantity: yup
-    .number()
-    .transform((value) => (Number.isNaN(value) ? undefined : value))
-    .required('Please enter a value')
-    .min(1, 'Please enter a value greater than 0')
-    .integer('Must be a whole number'),
+  lines: yup
+    .array()
+    .of(
+      yup.object().shape({
+        productId: yup.number().typeError('Product is required').required('Product is required'),
+        qtyOrdered: yup
+          .number()
+          .transform((value) => (Number.isNaN(value) ? undefined : value))
+          .required('Please enter a value')
+          .min(1, 'Please enter a value greater than 0')
+          .integer('Must be a whole number'),
+      })
+    )
+    .min(1, 'At least one product line is required')
+    .required(),
 });
 
 type PurchaseOrderFormData = yup.InferType<typeof schema>;
@@ -70,7 +79,7 @@ export default function Purchase() {
   const [open, setOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [activeReceiveOrder, setActiveReceiveOrder] = useState<PurchaseOrder | null>(null);
-  const [receiveQty, setReceiveQty] = useState<number>(0);
+  const [receiveQuantities, setReceiveQuantities] = useState<Record<number, number>>({});
 
   useEffect(() => {
     dispatch(purchaseActions.fetchPurchaseOrders());
@@ -89,22 +98,26 @@ export default function Purchase() {
     resolver: yupResolver(schema) as any,
     defaultValues: {
       vendorName: '',
-      productName: '',
-      quantity: 1,
+      lines: [{ productId: undefined as unknown as number, qtyOrdered: 1 }],
     },
   });
 
-  const selectedProduct = useWatch({ control, name: 'productName' });
-  const enteredQty = useWatch({ control, name: 'quantity' });
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'lines',
+  });
 
-  const currentProduct = products.find((p) => p.name === selectedProduct);
-  const calculatedTotal = currentProduct ? currentProduct.costPrice * (enteredQty || 0) : 0;
+  const selectedLines = useWatch({ control, name: 'lines' }) || [];
+  const calculatedTotal = selectedLines.reduce((sum, line) => {
+    if (!line?.productId) return sum;
+    const prod = products.find((p) => p.id === line.productId);
+    return sum + (prod ? prod.costPrice * (line.qtyOrdered || 0) : 0);
+  }, 0);
 
   const handleOpenCreate = () => {
     reset({
       vendorName: '',
-      productName: '',
-      quantity: 1,
+      lines: [{ productId: undefined as unknown as number, qtyOrdered: 1 }],
     });
     setOpen(true);
   };
@@ -114,15 +127,19 @@ export default function Purchase() {
   };
 
   const onSubmit = (data: PurchaseOrderFormData) => {
-    const totalVal = currentProduct ? currentProduct.costPrice * data.quantity : 0;
+    const linesPayload = data.lines.map((line) => {
+      const prod = products.find((p) => p.id === line.productId);
+      return {
+        productId: line.productId,
+        qtyOrdered: line.qtyOrdered,
+        unitPrice: prod ? prod.costPrice : 0,
+      };
+    });
 
     dispatch(
       purchaseActions.addPurchaseOrder({
         vendorName: data.vendorName,
-        productName: data.productName,
-        quantity: data.quantity,
-        status: 'Draft',
-        total: totalVal,
+        lines: linesPayload,
       })
     );
 
@@ -134,7 +151,12 @@ export default function Purchase() {
       dispatch(purchaseActions.confirmPurchaseOrder(row.id));
     } else if (row.status === 'Approved') {
       setActiveReceiveOrder(row);
-      setReceiveQty(row.quantity - row.qtyReceived);
+      const initialQtys: Record<number, number> = {};
+      row.lines?.forEach((line) => {
+        const remaining = line.qtyOrdered - line.qtyReceived;
+        initialQtys[line.productId] = Math.max(0, remaining);
+      });
+      setReceiveQuantities(initialQtys);
       setReceiveOpen(true);
     }
   };
@@ -209,10 +231,30 @@ export default function Purchase() {
                   <TableRow key={row.poNumber} hover>
                     <TableCell sx={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.poNumber}</TableCell>
                     <TableCell>{row.vendorName}</TableCell>
-                    <TableCell>{row.productName}</TableCell>
+                    <TableCell>
+                      {row.lines && row.lines.length > 1 ? (
+                        <Tooltip
+                          title={
+                            <Box sx={{ p: 0.5 }}>
+                              {row.lines.map((line, idx) => (
+                                <Typography key={idx} variant="caption" sx={{ display: 'block', color: '#fff' }}>
+                                  • {line.productName} ({line.qtyOrdered} units)
+                                </Typography>
+                              ))}
+                            </Box>
+                          }
+                        >
+                          <span style={{ cursor: 'pointer', borderBottom: '1px dashed' }}>
+                            {row.productName}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        row.productName
+                      )}
+                    </TableCell>
                     <TableCell align="right">
                       {row.qtyReceived > 0 && row.qtyReceived < row.quantity ? (
-                        <Tooltip title={`Received: ${row.qtyReceived} / ${row.quantity} units`}>
+                        <Tooltip title={`Received: ${row.qtyReceived} / ${row.quantity} total units`}>
                           <Typography variant="body2" sx={{ fontWeight: 500 }}>
                             {row.qtyReceived} / {row.quantity} units
                           </Typography>
@@ -298,43 +340,72 @@ export default function Purchase() {
                 )}
               </FormControl>
 
-              <FormControl fullWidth error={!!errors.productName}>
-                <InputLabel shrink>Product</InputLabel>
-                <Controller
-                  name="productName"
-                  control={control}
-                  render={({ field }) => (
-                    <Select {...field} label="Product" displayEmpty>
-                      <MenuItem value="" disabled>Select a product</MenuItem>
-                      {products.map((p) => (
-                        <MenuItem key={p.id} value={p.name}>
-                          {p.name} (${p.costPrice.toFixed(2)})
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  )}
-                />
-                {errors.productName && (
-                  <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
-                    {errors.productName.message}
-                  </Typography>
-                )}
-              </FormControl>
+              <Divider />
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                Order Products
+              </Typography>
 
-              <Controller
-                name="quantity"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Quantity"
-                    type="number"
-                    fullWidth
-                    error={!!errors.quantity}
-                    helperText={errors.quantity?.message}
+              {fields.map((field, index) => (
+                <Stack direction="row" spacing={2} key={field.id} sx={{ alignItems: 'flex-start' }}>
+                  <FormControl fullWidth error={!!errors.lines?.[index]?.productId}>
+                    <InputLabel shrink>Product</InputLabel>
+                    <Controller
+                      name={`lines.${index}.productId`}
+                      control={control}
+                      render={({ field: subField }) => (
+                        <Select {...subField} label="Product" displayEmpty value={subField.value ?? ''}>
+                          <MenuItem value="" disabled>Select product</MenuItem>
+                          {products.map((p) => (
+                            <MenuItem key={p.id} value={p.id}>
+                              {p.name} (${p.costPrice.toFixed(2)})
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      )}
+                    />
+                    {errors.lines?.[index]?.productId && (
+                      <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                        {errors.lines?.[index]?.productId?.message}
+                      </Typography>
+                    )}
+                  </FormControl>
+
+                  <Controller
+                    name={`lines.${index}.qtyOrdered`}
+                    control={control}
+                    render={({ field: subField }) => (
+                      <TextField
+                        {...subField}
+                        label="Quantity"
+                        type="number"
+                        sx={{ width: 130 }}
+                        error={!!errors.lines?.[index]?.qtyOrdered}
+                        helperText={errors.lines?.[index]?.qtyOrdered?.message}
+                        slotProps={{
+                          htmlInput: {
+                            min: 1,
+                          },
+                        }}
+                      />
+                    )}
                   />
-                )}
-              />
+
+                  {fields.length > 1 && (
+                    <IconButton color="error" onClick={() => remove(index)} sx={{ mt: 1 }}>
+                      <DeleteIcon />
+                    </IconButton>
+                  )}
+                </Stack>
+              ))}
+
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => append({ productId: '' as unknown as number, qtyOrdered: 1 })}
+                sx={{ alignSelf: 'flex-start', mt: 1 }}
+              >
+                Add Product Line
+              </Button>
 
               <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 2 }}>
                 <Typography variant="subtitle2" color="text.secondary">Estimated Cost:</Typography>
@@ -357,44 +428,63 @@ export default function Purchase() {
       </Dialog>
 
       {/* Receive Confirmation Dialog */}
-      <Dialog open={receiveOpen} onClose={() => setReceiveOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={receiveOpen} onClose={() => setReceiveOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>Receive Products</DialogTitle>
         <Divider />
         <DialogContent>
           {activeReceiveOrder && (
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                {activeReceiveOrder.productName}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                PO Number: {activeReceiveOrder.poNumber}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Total Ordered: {activeReceiveOrder.quantity} units
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Already Received: {activeReceiveOrder.qtyReceived} units
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Remaining to Receive: {activeReceiveOrder.quantity - activeReceiveOrder.qtyReceived} units
+            <Stack spacing={3} sx={{ mt: 1 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                PO Number: {activeReceiveOrder.poNumber} | Vendor: {activeReceiveOrder.vendorName}
               </Typography>
 
-              <TextField
-                label="Quantity to Receive Now"
-                type="number"
-                fullWidth
-                value={receiveQty === 0 ? '' : receiveQty}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setReceiveQty(val === '' ? 0 : parseInt(val) || 0);
-                }}
-                slotProps={{
-                  htmlInput: {
-                    min: 1,
-                    max: activeReceiveOrder.quantity - activeReceiveOrder.qtyReceived,
-                  }
-                }}
-              />
+              <TableContainer component={Paper} variant="outlined" elevation={0}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Product</TableCell>
+                      <TableCell align="right">Ordered</TableCell>
+                      <TableCell align="right">Received</TableCell>
+                      <TableCell align="right">Remaining</TableCell>
+                      <TableCell sx={{ width: 130 }} align="right">Receive Now</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {activeReceiveOrder.lines?.map((line) => {
+                      const remaining = line.qtyOrdered - line.qtyReceived;
+                      return (
+                        <TableRow key={line.productId}>
+                          <TableCell sx={{ fontWeight: 500 }}>{line.productName}</TableCell>
+                          <TableCell align="right">{line.qtyOrdered}</TableCell>
+                          <TableCell align="right">{line.qtyReceived}</TableCell>
+                          <TableCell align="right">{remaining}</TableCell>
+                          <TableCell align="right">
+                            <TextField
+                              size="small"
+                              type="number"
+                              value={receiveQuantities[line.productId] ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const numericVal = val === '' ? 0 : parseInt(val) || 0;
+                                setReceiveQuantities((prev) => ({
+                                  ...prev,
+                                  [line.productId]: numericVal,
+                                }));
+                              }}
+                              slotProps={{
+                                htmlInput: {
+                                  min: 0,
+                                  max: remaining,
+                                }
+                              }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </Stack>
           )}
         </DialogContent>
@@ -406,15 +496,22 @@ export default function Purchase() {
           <Button
             onClick={() => {
               if (activeReceiveOrder) {
+                const partials = Object.entries(receiveQuantities)
+                  .map(([prodId, qty]) => ({
+                    productId: parseInt(prodId),
+                    qtyToReceive: qty,
+                  }))
+                  .filter((p) => p.qtyToReceive > 0);
+
+                if (partials.length === 0) {
+                  alert('Please enter at least one quantity to receive');
+                  return;
+                }
+
                 dispatch(
                   purchaseActions.receivePurchaseOrder({
                     id: activeReceiveOrder.id,
-                    partials: [
-                      {
-                        productId: activeReceiveOrder.productId,
-                        qtyToReceive: receiveQty,
-                      },
-                    ],
+                    partials,
                   })
                 ).then(() => {
                   dispatch(purchaseActions.fetchPurchaseOrders());
@@ -424,7 +521,16 @@ export default function Purchase() {
             }}
             variant="contained"
             color="success"
-            disabled={!activeReceiveOrder || receiveQty <= 0 || receiveQty > (activeReceiveOrder.quantity - activeReceiveOrder.qtyReceived)}
+            disabled={
+              !activeReceiveOrder ||
+              Object.values(receiveQuantities).every((q) => q <= 0) ||
+              Object.entries(receiveQuantities).some(([prodId, q]) => {
+                const line = activeReceiveOrder.lines?.find((l) => l.productId === parseInt(prodId));
+                if (!line) return false;
+                const remaining = line.qtyOrdered - line.qtyReceived;
+                return q > remaining || q < 0;
+              })
+            }
           >
             Confirm Receipt
           </Button>

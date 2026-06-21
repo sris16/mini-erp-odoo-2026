@@ -290,6 +290,12 @@ export default function Products() {
                       fullWidth
                       error={!!errors.costPrice}
                       helperText={errors.costPrice?.message}
+                      slotProps={{
+                        htmlInput: {
+                          min: 0,
+                          step: "0.01",
+                        },
+                      }}
                     />
                   )}
                 />
@@ -304,6 +310,12 @@ export default function Products() {
                       fullWidth
                       error={!!errors.salesPrice}
                       helperText={errors.salesPrice?.message}
+                      slotProps={{
+                        htmlInput: {
+                          min: 0,
+                          step: "0.01",
+                        },
+                      }}
                     />
                   )}
                 />
@@ -321,6 +333,11 @@ export default function Products() {
                     error={!!errors.onHandQty}
                     helperText={errors.onHandQty?.message}
                     disabled={!!editingProduct} // Disallowed editing inventory quantity directly (backend ledger handles stock movement!)
+                    slotProps={{
+                      htmlInput: {
+                        min: 0,
+                      },
+                    }}
                   />
                 )}
               />

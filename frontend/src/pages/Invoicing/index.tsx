@@ -49,7 +49,7 @@ export default function Invoicing() {
   // Payment Dialog State
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [activeDoc, setActiveDoc] = useState<{ id: number; number: string; remaining: number; isInvoice: boolean } | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentAmount, setPaymentAmount] = useState<string | number>('');
 
   useEffect(() => {
     dispatch(invoicingActions.fetchInvoices());
@@ -81,19 +81,20 @@ export default function Invoicing() {
       remaining,
       isInvoice,
     });
-    setPaymentAmount(remaining);
+    setPaymentAmount(remaining.toString());
     setPaymentOpen(true);
   };
 
   const handleConfirmPayment = () => {
-    if (!activeDoc || paymentAmount <= 0 || paymentAmount > activeDoc.remaining) return;
+    const parsedAmount = parseFloat(String(paymentAmount)) || 0;
+    if (!activeDoc || parsedAmount <= 0 || parsedAmount > activeDoc.remaining) return;
 
     if (activeDoc.isInvoice) {
-      dispatch(invoicingActions.payInvoice({ id: activeDoc.id, amount: paymentAmount })).then(() => {
+      dispatch(invoicingActions.payInvoice({ id: activeDoc.id, amount: parsedAmount })).then(() => {
         dispatch(invoicingActions.fetchInvoices());
       });
     } else {
-      dispatch(invoicingActions.payBill({ id: activeDoc.id, amount: paymentAmount })).then(() => {
+      dispatch(invoicingActions.payBill({ id: activeDoc.id, amount: parsedAmount })).then(() => {
         dispatch(invoicingActions.fetchBills());
       });
     }
@@ -330,7 +331,7 @@ export default function Invoicing() {
                 type="number"
                 fullWidth
                 value={paymentAmount}
-                onChange={(e) => setPaymentAmount(Math.max(0.01, parseFloat(e.target.value) || 0))}
+                onChange={(e) => setPaymentAmount(e.target.value)}
                 slotProps={{
                   htmlInput: {
                     min: 0.01,
@@ -351,7 +352,7 @@ export default function Invoicing() {
             onClick={handleConfirmPayment}
             variant="contained"
             color="success"
-            disabled={!activeDoc || paymentAmount <= 0 || paymentAmount > activeDoc.remaining}
+            disabled={!activeDoc || (parseFloat(String(paymentAmount)) || 0) <= 0 || (parseFloat(String(paymentAmount)) || 0) > activeDoc.remaining}
           >
             Confirm Payment
           </Button>

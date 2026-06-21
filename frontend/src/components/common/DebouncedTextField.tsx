@@ -14,13 +14,19 @@ export default function DebouncedTextField({
   ...props
 }: DebouncedTextFieldProps) {
   const [localValue, setLocalValue] = useState(value);
+  const [prevValue, setPrevValue] = useState(value);
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
 
-  // Sync external value changes (e.g., reset or clear from parent)
-  useEffect(() => {
+  // Sync external value changes during render (recommended React pattern)
+  if (value !== prevValue) {
     setLocalValue(value);
-  }, [value]);
+    setPrevValue(value);
+  }
+
+  // Update onChange ref inside useEffect
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

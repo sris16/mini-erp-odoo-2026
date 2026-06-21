@@ -292,6 +292,11 @@ export default function BoM() {
                         type="number"
                         sx={{ width: 150 }}
                         error={!!errors.components?.[index]?.qty}
+                        slotProps={{
+                          htmlInput: {
+                            min: 1,
+                          },
+                        }}
                       />
                     )}
                   />

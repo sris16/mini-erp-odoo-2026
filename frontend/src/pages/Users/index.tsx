@@ -33,7 +33,7 @@ import {
   Delete as DeleteIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type Resolver } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import {
@@ -98,7 +98,7 @@ export default function Users() {
     reset,
     formState: { errors },
   } = useForm<UserFormData>({
-    resolver: yupResolver(schema) as any,
+    resolver: yupResolver(schema) as unknown as Resolver<UserFormData>,
     context: { isEdit: editingUser !== null },
     defaultValues: {
       username: '',
@@ -149,7 +149,7 @@ export default function Users() {
 
   const onSubmit = (data: UserFormData) => {
     if (editingUser) {
-      const payload: any = {
+      const payload: { id: number; username: string; password?: string; role: string } = {
         id: editingUser.id,
         username: data.username,
         role: data.role,
