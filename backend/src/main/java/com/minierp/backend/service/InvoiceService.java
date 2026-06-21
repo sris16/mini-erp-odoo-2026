@@ -1,9 +1,7 @@
 package com.minierp.backend.service;
 
 import com.minierp.backend.model.*;
-import com.minierp.backend.repository.AuditLogRepository;
-import com.minierp.backend.repository.InvoiceRepository;
-import com.minierp.backend.repository.SalesOrderRepository;
+import com.minierp.backend.repository.*;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +16,19 @@ public class InvoiceService {
 
     private final InvoiceRepository invoiceRepository;
     private final SalesOrderRepository salesOrderRepository;
+    private final ManufacturingOrderRepository manufacturingOrderRepository;
+    private final CustomerRepository customerRepository;
     private final AuditLogRepository auditLogRepository;
 
     public InvoiceService(InvoiceRepository invoiceRepository,
                           SalesOrderRepository salesOrderRepository,
+                          ManufacturingOrderRepository manufacturingOrderRepository,
+                          CustomerRepository customerRepository,
                           AuditLogRepository auditLogRepository) {
         this.invoiceRepository = invoiceRepository;
         this.salesOrderRepository = salesOrderRepository;
+        this.manufacturingOrderRepository = manufacturingOrderRepository;
+        this.customerRepository = customerRepository;
         this.auditLogRepository = auditLogRepository;
     }
 
@@ -113,6 +117,55 @@ public class InvoiceService {
         Invoice savedInvoice = invoiceRepository.save(invoice);
         logAudit("CREATE_INVOICE_FROM_SO", String.format("Generated Draft Invoice %s from Sales Order ID %d",
                 savedInvoice.getInvoiceNumber(), salesOrderId));
+        return savedInvoice;
+    }
+
+    @Transactional
+    public Invoice createInvoiceFromManufacturingOrder(Long moId) {
+        List<Invoice> existingInvoices = invoiceRepository.findAll();
+        for (Invoice inv : existingInvoices) {
+            if (moId.equals(inv.getManufacturingOrderId())) {
+                throw new IllegalStateException("Invoice already exists for Manufacturing Order ID " + moId);
+            }
+        }
+
+        ManufacturingOrder mo = manufacturingOrderRepository.findById(moId)
+                .orElseThrow(() -> new IllegalArgumentException("Manufacturing Order not found with id: " + moId));
+
+        if (mo.getStatus() == ManufacturingOrderStatus.DRAFT) {
+            throw new IllegalStateException("Cannot invoice a Manufacturing Order in DRAFT status");
+        }
+
+        Product finishedProduct = mo.getFinishedProduct();
+        BigDecimal totalAmount = finishedProduct.getSalesPrice().multiply(BigDecimal.valueOf(mo.getQty()));
+
+        String customerName = customerRepository.findAll().stream()
+                .findFirst()
+                .map(Customer::getName)
+                .orElse("Manufacturing Customer");
+
+        Invoice invoice = Invoice.builder()
+                .manufacturingOrderId(moId)
+                .customerName(customerName)
+                .status(InvoiceStatus.DRAFT)
+                .issueDate(LocalDateTime.now())
+                .amountPaid(BigDecimal.ZERO)
+                .totalAmount(totalAmount)
+                .build();
+
+        List<InvoiceLine> invoiceLines = new ArrayList<>();
+        InvoiceLine invLine = InvoiceLine.builder()
+                .invoice(invoice)
+                .product(finishedProduct)
+                .quantity(mo.getQty())
+                .unitPrice(finishedProduct.getSalesPrice())
+                .build();
+        invoiceLines.add(invLine);
+        invoice.setLines(invoiceLines);
+
+        Invoice savedInvoice = invoiceRepository.save(invoice);
+        logAudit("CREATE_INVOICE_FROM_MO", String.format("Generated Draft Invoice %s from Manufacturing Order ID %d",
+                savedInvoice.getInvoiceNumber(), moId));
 
         return savedInvoice;
     }

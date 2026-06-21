@@ -1,9 +1,7 @@
 package com.minierp.backend.service;
 
 import com.minierp.backend.model.*;
-import com.minierp.backend.repository.AuditLogRepository;
-import com.minierp.backend.repository.VendorBillRepository;
-import com.minierp.backend.repository.PurchaseOrderRepository;
+import com.minierp.backend.repository.*;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +16,19 @@ public class VendorBillService {
 
     private final VendorBillRepository vendorBillRepository;
     private final PurchaseOrderRepository purchaseOrderRepository;
+    private final ManufacturingOrderRepository manufacturingOrderRepository;
+    private final BomComponentRepository bomComponentRepository;
     private final AuditLogRepository auditLogRepository;
 
     public VendorBillService(VendorBillRepository vendorBillRepository,
                              PurchaseOrderRepository purchaseOrderRepository,
+                             ManufacturingOrderRepository manufacturingOrderRepository,
+                             BomComponentRepository bomComponentRepository,
                              AuditLogRepository auditLogRepository) {
         this.vendorBillRepository = vendorBillRepository;
         this.purchaseOrderRepository = purchaseOrderRepository;
+        this.manufacturingOrderRepository = manufacturingOrderRepository;
+        this.bomComponentRepository = bomComponentRepository;
         this.auditLogRepository = auditLogRepository;
     }
 
@@ -113,6 +117,76 @@ public class VendorBillService {
         VendorBill savedBill = vendorBillRepository.save(bill);
         logAudit("CREATE_BILL_FROM_PO", String.format("Generated Draft Vendor Bill %s from Purchase Order ID %d",
                 savedBill.getBillNumber(), purchaseOrderId));
+
+        return savedBill;
+    }
+
+    @Transactional
+    public VendorBill createBillFromManufacturingOrder(Long moId) {
+        List<VendorBill> existingBills = vendorBillRepository.findAll();
+        for (VendorBill bill : existingBills) {
+            if (moId.equals(bill.getManufacturingOrderId())) {
+                throw new IllegalStateException("Vendor Bill already exists for Manufacturing Order ID " + moId);
+            }
+        }
+
+        ManufacturingOrder mo = manufacturingOrderRepository.findById(moId)
+                .orElseThrow(() -> new IllegalArgumentException("Manufacturing Order not found with id: " + moId));
+
+        if (mo.getStatus() == ManufacturingOrderStatus.DRAFT) {
+            throw new IllegalStateException("Cannot bill a Manufacturing Order in DRAFT status");
+        }
+
+        if (mo.getBom() == null) {
+            throw new IllegalStateException("Cannot create vendor bill: Manufacturing Order has no Bill of Materials (BoM).");
+        }
+
+        List<BomComponent> components = bomComponentRepository.findByBomId(mo.getBom().getId());
+        if (components.isEmpty()) {
+            throw new IllegalStateException("Cannot create vendor bill: BoM has no components.");
+        }
+
+        List<VendorBillLine> billLines = new ArrayList<>();
+        BigDecimal totalAmount = BigDecimal.ZERO;
+
+        VendorBill bill = VendorBill.builder()
+                .manufacturingOrderId(moId)
+                .vendorName("Manufacturing Vendor")
+                .status(InvoiceStatus.DRAFT)
+                .issueDate(LocalDateTime.now())
+                .amountPaid(BigDecimal.ZERO)
+                .build();
+
+        for (BomComponent comp : components) {
+            Product compProduct = comp.getComponent();
+            int qtyToBill = comp.getQuantity() * mo.getQty();
+
+            BigDecimal lineTotal = compProduct.getCostPrice().multiply(BigDecimal.valueOf(qtyToBill));
+            totalAmount = totalAmount.add(lineTotal);
+
+            VendorBillLine billLine = VendorBillLine.builder()
+                    .vendorBill(bill)
+                    .product(compProduct)
+                    .quantity(qtyToBill)
+                    .unitPrice(compProduct.getCostPrice())
+                    .build();
+
+            billLines.add(billLine);
+        }
+
+        String vendorName = "Manufacturing Vendor";
+        if (!components.isEmpty() && components.get(0).getComponent().getVendor() != null 
+                && !components.get(0).getComponent().getVendor().trim().isEmpty()) {
+            vendorName = components.get(0).getComponent().getVendor();
+        }
+        bill.setVendorName(vendorName);
+
+        bill.setLines(billLines);
+        bill.setTotalAmount(totalAmount);
+
+        VendorBill savedBill = vendorBillRepository.save(bill);
+        logAudit("CREATE_BILL_FROM_MO", String.format("Generated Draft Vendor Bill %s from Manufacturing Order ID %d",
+                savedBill.getBillNumber(), moId));
 
         return savedBill;
     }

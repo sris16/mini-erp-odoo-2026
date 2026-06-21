@@ -51,6 +51,9 @@ public class Product {
 
     private Long bomId;
 
+    @Transient
+    private java.util.List<com.minierp.backend.dto.BomDto.ComponentDto> bomComponents;
+
     // Transient helper for JSON serialization
     public Integer getFreeToUseQty() {
         int onHand = onHandQty != null ? onHandQty : 0;

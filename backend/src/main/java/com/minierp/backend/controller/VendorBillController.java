@@ -42,6 +42,12 @@ public class VendorBillController {
         return ResponseEntity.ok(vendorBillService.createBillFromPurchaseOrder(poId));
     }
 
+    @PostMapping("/from-mo/{moId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'PURCHASE_USER', 'MANUFACTURING_USER')")
+    public ResponseEntity<VendorBill> createBillFromMO(@PathVariable Long moId) {
+        return ResponseEntity.ok(vendorBillService.createBillFromManufacturingOrder(moId));
+    }
+
     @PostMapping("/{id}/post")
     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'PURCHASE_USER')")
     public ResponseEntity<VendorBill> postBill(@PathVariable Long id) {

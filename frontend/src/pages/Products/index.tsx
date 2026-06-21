@@ -32,7 +32,7 @@ import {
   Delete as DeleteIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useFieldArray, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import {
@@ -40,6 +40,7 @@ import {
   useAppSelector,
   productsActions,
   reorderingRulesActions,
+  bomActions,
   type Product,
 } from '../../store';
 import DebouncedTextField from '../../components/common/DebouncedTextField';
@@ -52,6 +53,12 @@ const schema = yup.object().shape({
   onHandQty: yup.number().transform((value) => (Number.isNaN(value) ? undefined : value)).required('Please enter a value').min(0, 'Cannot be negative').integer('Must be whole number'),
   procurementStrategy: yup.string().required('Procurement strategy is required'),
   procurementType: yup.string().required('Procurement type is required'),
+  bomComponents: yup.array().of(
+    yup.object().shape({
+      name: yup.string().required('Component is required'),
+      qty: yup.number().transform((value) => (Number.isNaN(value) ? undefined : value)).required('Quantity is required').min(0.001, 'Quantity must be positive'),
+    })
+  ).optional(),
 });
 
 type ProductFormData = yup.InferType<typeof schema>;
@@ -60,10 +67,12 @@ export default function Products() {
   const dispatch = useAppDispatch();
   const products = useAppSelector((state) => state.products.items);
   const reorderingRules = useAppSelector((state) => state.reorderingRules.items);
+  const boms = useAppSelector((state) => state.bom.items);
 
   useEffect(() => {
     dispatch(productsActions.fetchProducts());
     dispatch(reorderingRulesActions.fetchReorderingRules());
+    dispatch(bomActions.fetchBoms());
   }, [dispatch]);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -74,6 +83,7 @@ export default function Products() {
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<ProductFormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,8 +96,25 @@ export default function Products() {
       onHandQty: 0,
       procurementStrategy: 'MTS',
       procurementType: 'Purchased',
+      bomComponents: [],
     },
   });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'bomComponents',
+  });
+
+  const procurementType = useWatch({ control, name: 'procurementType', defaultValue: 'Purchased' });
+  const bomComponentsList = useWatch({ control, name: 'bomComponents', defaultValue: [] });
+  const currentProductName = useWatch({ control, name: 'name', defaultValue: '' });
+
+  // Automatically update procurementType to Manufactured if components are added
+  useEffect(() => {
+    if (bomComponentsList && bomComponentsList.length > 0 && procurementType !== 'Manufactured') {
+      setValue('procurementType', 'Manufactured');
+    }
+  }, [bomComponentsList, procurementType, setValue]);
 
   const handleOpenCreate = () => {
     setEditingProduct(null);
@@ -99,12 +126,14 @@ export default function Products() {
       onHandQty: 0,
       procurementStrategy: 'MTS',
       procurementType: 'Purchased',
+      bomComponents: [],
     });
     setOpen(true);
   };
 
   const handleOpenEdit = (product: Product) => {
     setEditingProduct(product);
+    const existingBom = boms.find((b) => b.finishedProduct === product.name);
     reset({
       name: product.name,
       sku: product.sku,
@@ -113,6 +142,7 @@ export default function Products() {
       onHandQty: product.onHandQty,
       procurementStrategy: product.procurementStrategy,
       procurementType: product.procurementType,
+      bomComponents: existingBom ? existingBom.components.map((c) => ({ name: c.name, qty: c.qty })) : [],
     });
     setOpen(true);
   };
@@ -128,11 +158,23 @@ export default function Products() {
   };
 
   const onSubmit = (data: ProductFormData) => {
+    const payload = {
+      ...data,
+      bomComponents: data.procurementType === 'Manufactured' ? data.bomComponents || [] : [],
+    };
     if (editingProduct) {
-      const updated: Product = { id: editingProduct.id, ...data } as Product;
-      dispatch(productsActions.editProduct(updated));
+      const updated: Product = { id: editingProduct.id, ...payload } as Product;
+      dispatch(productsActions.editProduct(updated))
+        .unwrap()
+        .then(() => {
+          dispatch(bomActions.fetchBoms());
+        });
     } else {
-      dispatch(productsActions.addProduct(data as Omit<Product, 'id'>));
+      dispatch(productsActions.addProduct(payload as Omit<Product, 'id'>))
+        .unwrap()
+        .then(() => {
+          dispatch(bomActions.fetchBoms());
+        });
     }
     setOpen(false);
   };
@@ -371,6 +413,81 @@ export default function Products() {
                   />
                 </FormControl>
               </Stack>
+
+              {procurementType === 'Manufactured' && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: 'text.primary' }}>
+                    Bill of Materials (BoM) Components
+                  </Typography>
+                  <Divider sx={{ mb: 2 }} />
+                  {fields.map((field, idx) => {
+                    const componentError = errors.bomComponents?.[idx];
+                    return (
+                      <Stack key={field.id} direction="row" spacing={2} sx={{ mb: 2, alignItems: 'flex-start' }}>
+                        <FormControl fullWidth error={!!componentError?.name}>
+                          <InputLabel shrink>Component Product</InputLabel>
+                          <Controller
+                            name={`bomComponents.${idx}.name` as const}
+                            control={control}
+                            render={({ field: selectField }) => (
+                              <Select
+                                {...selectField}
+                                label="Component Product"
+                                displayEmpty
+                                value={selectField.value ?? ''}
+                              >
+                                <MenuItem value="" disabled>Select component</MenuItem>
+                                {products
+                                  .filter((p) => p.name !== currentProductName)
+                                  .map((p) => (
+                                    <MenuItem key={p.id} value={p.name}>
+                                      {p.name} (SKU: {p.sku})
+                                    </MenuItem>
+                                  ))}
+                              </Select>
+                            )}
+                          />
+                          {componentError?.name && (
+                            <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                              {componentError.name.message}
+                            </Typography>
+                          )}
+                        </FormControl>
+                        
+                        <Controller
+                          name={`bomComponents.${idx}.qty` as const}
+                          control={control}
+                          render={({ field: qtyField }) => (
+                            <TextField
+                              {...qtyField}
+                              label="Quantity"
+                              type="number"
+                              sx={{ width: 140 }}
+                              error={!!componentError?.qty}
+                              helperText={componentError?.qty?.message}
+                              slotProps={{
+                                htmlInput: { min: 0.001, step: "any" }
+                              }}
+                            />
+                          )}
+                        />
+
+                        <IconButton onClick={() => remove(idx)} color="error" sx={{ mt: 1 }}>
+                          <DeleteIcon sx={{ fontSize: 20 }} />
+                        </IconButton>
+                      </Stack>
+                    );
+                  })}
+                  <Button
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={() => append({ name: '', qty: 1 })}
+                    sx={{ mt: 1 }}
+                  >
+                    Add Component
+                  </Button>
+                </Box>
+              )}
             </Stack>
           </DialogContent>
           <Divider />

@@ -184,14 +184,16 @@ export default function Invoicing() {
     (i) =>
       i.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       i.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (i.salesOrderId ? `so-00${i.salesOrderId}`.includes(searchTerm.toLowerCase()) : false)
+      (i.salesOrderId ? `so-00${i.salesOrderId}`.includes(searchTerm.toLowerCase()) : false) ||
+      (i.manufacturingOrderId ? `mo-00${i.manufacturingOrderId}`.includes(searchTerm.toLowerCase()) : false)
   );
 
   const filteredBills = bills.filter(
     (b) =>
       b.billNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (b.purchaseOrderId ? `po-00${b.purchaseOrderId}`.includes(searchTerm.toLowerCase()) : false)
+      (b.purchaseOrderId ? `po-00${b.purchaseOrderId}`.includes(searchTerm.toLowerCase()) : false) ||
+      (b.manufacturingOrderId ? `mo-00${b.manufacturingOrderId}`.includes(searchTerm.toLowerCase()) : false)
   );
 
   return (
@@ -258,7 +260,7 @@ export default function Invoicing() {
                     <TableRow key={row.id} hover>
                       <TableCell sx={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.invoiceNumber}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace' }}>
-                        {row.salesOrderId ? `SO-00${row.salesOrderId}` : 'Manual'}
+                        {row.salesOrderId ? `SO-00${row.salesOrderId}` : row.manufacturingOrderId ? `MO-00${row.manufacturingOrderId}` : 'Manual'}
                       </TableCell>
                       <TableCell>{row.customerName}</TableCell>
                       <TableCell>{row.issueDate ? row.issueDate.replace('T', ' ').substring(0, 10) : 'N/A'}</TableCell>
@@ -329,7 +331,7 @@ export default function Invoicing() {
                     <TableRow key={row.id} hover>
                       <TableCell sx={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.billNumber}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace' }}>
-                        {row.purchaseOrderId ? `PO-00${row.purchaseOrderId}` : 'Manual'}
+                        {row.purchaseOrderId ? `PO-00${row.purchaseOrderId}` : row.manufacturingOrderId ? `MO-00${row.manufacturingOrderId}` : 'Manual'}
                       </TableCell>
                       <TableCell>{row.vendorName}</TableCell>
                       <TableCell>{row.issueDate ? row.issueDate.replace('T', ' ').substring(0, 10) : 'N/A'}</TableCell>

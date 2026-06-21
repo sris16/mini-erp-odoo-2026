@@ -42,6 +42,12 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.createInvoiceFromSalesOrder(soId));
     }
 
+    @PostMapping("/from-mo/{moId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'SALES_USER', 'MANUFACTURING_USER')")
+    public ResponseEntity<Invoice> createInvoiceFromMO(@PathVariable Long moId) {
+        return ResponseEntity.ok(invoiceService.createInvoiceFromManufacturingOrder(moId));
+    }
+
     @PostMapping("/{id}/post")
     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'SALES_USER')")
     public ResponseEntity<Invoice> postInvoice(@PathVariable Long id) {

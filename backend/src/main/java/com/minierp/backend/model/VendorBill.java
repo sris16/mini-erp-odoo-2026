@@ -21,6 +21,7 @@ public class VendorBill {
     private Long id;
 
     private Long purchaseOrderId;
+    private Long manufacturingOrderId;
 
     @Column(nullable = false)
     private String vendorName;

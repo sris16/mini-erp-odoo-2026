@@ -15,6 +15,7 @@ export interface Product {
   reservedQty: number;
   procurementStrategy: string; // MTO, MTS
   procurementType: string; // Manufactured, Purchased
+  bomComponents?: { name: string; qty: number }[];
 }
 
 export interface Customer {
@@ -147,6 +148,7 @@ export interface Invoice {
   id: number;
   invoiceNumber: string;
   salesOrderId?: number;
+  manufacturingOrderId?: number;
   customerName: string;
   status: string; // DRAFT, POSTED, PAID, CANCELLED
   issueDate: string;
@@ -170,6 +172,7 @@ export interface VendorBill {
   id: number;
   billNumber: string;
   purchaseOrderId?: number;
+  manufacturingOrderId?: number;
   vendorName: string;
   status: string; // DRAFT, POSTED, PAID, CANCELLED
   issueDate: string;
@@ -321,6 +324,7 @@ export interface ApiInvoice {
   id: number;
   invoiceNumber?: string;
   salesOrderId?: number;
+  manufacturingOrderId?: number;
   customerName: string;
   status: string;
   issueDate: string;
@@ -344,6 +348,7 @@ export interface ApiVendorBill {
   id: number;
   billNumber?: string;
   purchaseOrderId?: number;
+  manufacturingOrderId?: number;
   vendorName: string;
   status: string;
   issueDate: string;
@@ -702,6 +707,11 @@ export const createInvoiceFromSO = createAsyncThunk('invoices/createFromSO', asy
   return response.data;
 });
 
+export const createInvoiceFromMO = createAsyncThunk('invoices/createFromMO', async (moId: number) => {
+  const response = await api.post(`/invoices/from-mo/${moId}`);
+  return response.data;
+});
+
 export const postInvoice = createAsyncThunk('invoices/post', async (id: number) => {
   const response = await api.post(`/invoices/${id}/post`);
   return response.data;
@@ -720,6 +730,11 @@ export const fetchBills = createAsyncThunk('bills/fetchAll', async () => {
 
 export const createBillFromPO = createAsyncThunk('bills/createFromPO', async (poId: number) => {
   const response = await api.post(`/bills/from-po/${poId}`);
+  return response.data;
+});
+
+export const createBillFromMO = createAsyncThunk('bills/createFromMO', async (moId: number) => {
+  const response = await api.post(`/bills/from-mo/${moId}`);
   return response.data;
 });
 
@@ -1353,6 +1368,17 @@ const invoicesSlice = createSlice({
         })),
       });
     });
+    builder.addCase(createInvoiceFromMO.fulfilled, (state, action) => {
+      const inv = action.payload as ApiInvoice;
+      state.items.unshift({
+        ...inv,
+        invoiceNumber: inv.invoiceNumber || `INV-00${inv.id}`,
+        lines: inv.lines.map((l) => ({
+          ...l,
+          productName: l.product?.name || l.productName || 'N/A',
+        })),
+      });
+    });
     builder.addCase(postInvoice.fulfilled, (state, action) => {
       const updated = action.payload as ApiInvoice;
       const idx = state.items.findIndex((i) => i.id === updated.id);
@@ -1412,6 +1438,17 @@ const billsSlice = createSlice({
       state.loading = false;
     });
     builder.addCase(createBillFromPO.fulfilled, (state, action) => {
+      const bill = action.payload as ApiVendorBill;
+      state.items.unshift({
+        ...bill,
+        billNumber: bill.billNumber || `BILL-00${bill.id}`,
+        lines: bill.lines.map((l) => ({
+          ...l,
+          productName: l.product?.name || l.productName || 'N/A',
+        })),
+      });
+    });
+    builder.addCase(createBillFromMO.fulfilled, (state, action) => {
       const bill = action.payload as ApiVendorBill;
       state.items.unshift({
         ...bill,
@@ -1734,7 +1771,7 @@ export const manufacturingActions = { fetchManufacturingOrders, addManufacturing
 export const auditLogsActions = { fetchAuditLogs };
 export const dashboardActions = { fetchDashboardKpis, fetchDashboardCharts };
 export const reorderingRulesActions = { fetchReorderingRules, addReorderingRule, editReorderingRule, deleteReorderingRule, runReorderingScheduler };
-export const invoicingActions = { fetchInvoices, createInvoiceFromSO, postInvoice, payInvoice, fetchBills, createBillFromPO, postBill, payBill };
+export const invoicingActions = { fetchInvoices, createInvoiceFromSO, createInvoiceFromMO, postInvoice, payInvoice, fetchBills, createBillFromPO, createBillFromMO, postBill, payBill };
 export const locationsActions = {
   fetchLocations,
   fetchLocationStocks,

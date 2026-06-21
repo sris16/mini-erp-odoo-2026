@@ -21,6 +21,7 @@ public class Invoice {
     private Long id;
 
     private Long salesOrderId;
+    private Long manufacturingOrderId;
 
     @Column(nullable = false)
     private String customerName;

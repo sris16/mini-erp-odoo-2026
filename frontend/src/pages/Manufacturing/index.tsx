@@ -28,6 +28,8 @@ import {
   Check as DoneIcon,
   CheckCircle as ApproveIcon,
   Warning as WarnIcon,
+  Receipt as BillIcon,
+  Description as InvoiceIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -38,6 +40,7 @@ import {
   manufacturingActions,
   productsActions,
   bomActions,
+  invoicingActions,
   type ManufacturingOrder,
 } from '../../store';
 
@@ -58,6 +61,8 @@ export default function Manufacturing() {
   const mfgOrders = useAppSelector((state) => state.manufacturing.orders);
   const products = useAppSelector((state) => state.products.items);
   const boms = useAppSelector((state) => state.bom.items);
+  const invoices = useAppSelector((state) => state.invoices.items);
+  const bills = useAppSelector((state) => state.bills.items);
 
   const [open, setOpen] = useState(false);
   const [infoModal, setInfoModal] = useState<{
@@ -100,6 +105,8 @@ export default function Manufacturing() {
     dispatch(manufacturingActions.fetchManufacturingOrders());
     dispatch(productsActions.fetchProducts());
     dispatch(bomActions.fetchBoms());
+    dispatch(invoicingActions.fetchInvoices());
+    dispatch(invoicingActions.fetchBills());
   }, [dispatch]);
 
   const {
@@ -305,18 +312,80 @@ export default function Manufacturing() {
                             <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
                               {order.moNumber}
                             </Typography>
-                            {order.status !== 'Completed' && (
-                              <Tooltip title={order.status === 'Draft' ? 'Start Order' : 'Complete Order'}>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleAdvanceStatus(order)}
-                                  color="success"
-                                  sx={{ p: 0.5 }}
-                                >
-                                  {order.status === 'Draft' ? <StartIcon sx={{ fontSize: 16 }} /> : <DoneIcon sx={{ fontSize: 16 }} />}
-                                </IconButton>
-                              </Tooltip>
-                            )}
+                            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                              {order.status !== 'Draft' && order.rawStatus !== 'CANCELLED' && (
+                                <>
+                                  <Tooltip title={invoices.some((inv) => inv.manufacturingOrderId === order.id) ? "Invoice Already Created" : "Create Customer Invoice"}>
+                                    <span>
+                                      <IconButton
+                                        size="small"
+                                        color="primary"
+                                        onClick={() => {
+                                          dispatch(invoicingActions.createInvoiceFromMO(order.id))
+                                            .unwrap()
+                                            .then(() => {
+                                              showInfoPopup(
+                                                'Task Completed Successfully',
+                                                'Customer Invoice has been successfully created from the Manufacturing Order.',
+                                                'success'
+                                              );
+                                              dispatch(invoicingActions.fetchInvoices());
+                                            })
+                                            .catch((err: unknown) => {
+                                              const error = err as { message?: string };
+                                              showInfoPopup('Error Creating Invoice', error?.message || 'Failed to create invoice.', 'error');
+                                            });
+                                        }}
+                                        disabled={invoices.some((inv) => inv.manufacturingOrderId === order.id)}
+                                        sx={{ p: 0.5 }}
+                                      >
+                                        <InvoiceIcon sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                  <Tooltip title={bills.some((bill) => bill.manufacturingOrderId === order.id) ? "Bill Already Created" : "Create Vendor Bill"}>
+                                    <span>
+                                      <IconButton
+                                        size="small"
+                                        color="secondary"
+                                        onClick={() => {
+                                          dispatch(invoicingActions.createBillFromMO(order.id))
+                                            .unwrap()
+                                            .then(() => {
+                                              showInfoPopup(
+                                                'Task Completed Successfully',
+                                                'Vendor Bill has been successfully created from the Manufacturing Order.',
+                                                'success'
+                                              );
+                                              dispatch(invoicingActions.fetchBills());
+                                            })
+                                            .catch((err: unknown) => {
+                                              const error = err as { message?: string };
+                                              showInfoPopup('Error Creating Bill', error?.message || 'Failed to create vendor bill.', 'error');
+                                            });
+                                        }}
+                                        disabled={bills.some((bill) => bill.manufacturingOrderId === order.id)}
+                                        sx={{ p: 0.5 }}
+                                      >
+                                        <BillIcon sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                </>
+                              )}
+                              {order.status !== 'Completed' && order.rawStatus !== 'CANCELLED' && (
+                                <Tooltip title={order.status === 'Draft' ? 'Start Order' : 'Complete Order'}>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleAdvanceStatus(order)}
+                                    color="success"
+                                    sx={{ p: 0.5 }}
+                                  >
+                                    {order.status === 'Draft' ? <StartIcon sx={{ fontSize: 16 }} /> : <DoneIcon sx={{ fontSize: 16 }} />}
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Stack>
                           </Stack>
                           <Typography variant="body1" sx={{ fontWeight: 600, mt: 1 }}>
                             {order.productName}

@@ -1,10 +1,7 @@
 package com.minierp.backend.service;
 
-import com.minierp.backend.model.AuditLog;
-import com.minierp.backend.model.Product;
-import com.minierp.backend.model.StockMovementType;
-import com.minierp.backend.repository.AuditLogRepository;
-import com.minierp.backend.repository.ProductRepository;
+import com.minierp.backend.model.*;
+import com.minierp.backend.repository.*;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,13 +14,19 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final StockLedgerService stockLedgerService;
     private final AuditLogRepository auditLogRepository;
+    private final BomRepository bomRepository;
+    private final BomComponentRepository bomComponentRepository;
 
     public ProductService(ProductRepository productRepository,
                           StockLedgerService stockLedgerService,
-                          AuditLogRepository auditLogRepository) {
+                          AuditLogRepository auditLogRepository,
+                          BomRepository bomRepository,
+                          BomComponentRepository bomComponentRepository) {
         this.productRepository = productRepository;
         this.stockLedgerService = stockLedgerService;
         this.auditLogRepository = auditLogRepository;
+        this.bomRepository = bomRepository;
+        this.bomComponentRepository = bomComponentRepository;
     }
 
     public List<Product> getAllProducts() {
@@ -52,6 +55,10 @@ public class ProductService {
         // If there was initial stock, seed it properly through the stock ledger
         if (initialStock > 0) {
             stockLedgerService.logMovement(savedProduct, initialStock, StockMovementType.IN, "Initial Stock Seed");
+        }
+
+        if (product.getBomComponents() != null) {
+            saveBomComponents(savedProduct, product.getBomComponents());
         }
 
         String username = getCurrentUsername();
@@ -86,6 +93,10 @@ public class ProductService {
         // Note: onHandQty and reservedQty are NOT modified here. That is done via stock ledger adjustments.
         Product updatedProduct = productRepository.save(product);
 
+        if (productDetails.getBomComponents() != null) {
+            saveBomComponents(updatedProduct, productDetails.getBomComponents());
+        }
+
         String newDetails = String.format("Name: %s, SKU: %s, SalesPrice: %s, CostPrice: %s, Strategy: %s, Type: %s, Vendor: %s, BomId: %s",
                 updatedProduct.getName(), updatedProduct.getSku(), updatedProduct.getSalesPrice(), updatedProduct.getCostPrice(),
                 updatedProduct.getProcurementStrategy(), updatedProduct.getProcurementType(), updatedProduct.getVendor(), updatedProduct.getBomId());
@@ -99,6 +110,71 @@ public class ProductService {
         auditLogRepository.save(auditLog);
 
         return updatedProduct;
+    }
+
+    private void saveBomComponents(Product product, List<com.minierp.backend.dto.BomDto.ComponentDto> componentsList) {
+        if (componentsList == null) return;
+        
+        if (componentsList.isEmpty()) {
+            // Delete Bom if exists
+            List<Bom> existingBoms = bomRepository.findByFinishedProductId(product.getId());
+            if (!existingBoms.isEmpty()) {
+                Bom bom = existingBoms.get(0);
+                List<BomComponent> components = bomComponentRepository.findByBomId(bom.getId());
+                bomComponentRepository.deleteAll(components);
+                bomRepository.delete(bom);
+            }
+            product.setBomId(null);
+            product.setProcurementType(com.minierp.backend.model.ProcurementType.MANUFACTURING); // keep it Manufacturing or default back? Let's default to PURCHASE if empty
+            product.setProcurementType(com.minierp.backend.model.ProcurementType.PURCHASE);
+            productRepository.save(product);
+            return;
+        }
+
+        // Set to MANUFACTURING
+        product.setProcurementType(com.minierp.backend.model.ProcurementType.MANUFACTURING);
+
+        // Find or create Bom
+        List<Bom> existingBoms = bomRepository.findByFinishedProductId(product.getId());
+        Bom bom;
+        if (!existingBoms.isEmpty()) {
+            bom = existingBoms.get(0);
+            // Clear existing components
+            List<BomComponent> existingComponents = bomComponentRepository.findByBomId(bom.getId());
+            bomComponentRepository.deleteAll(existingComponents);
+        } else {
+            bom = Bom.builder()
+                    .name(product.getName() + " BoM")
+                    .finishedProduct(product)
+                    .productQty(1)
+                    .build();
+            bom = bomRepository.save(bom);
+        }
+
+        // Save new components
+        for (com.minierp.backend.dto.BomDto.ComponentDto compDto : componentsList) {
+            if (compDto.getName() == null || compDto.getName().trim().isEmpty()) {
+                continue;
+            }
+            Product componentProduct = productRepository.findByName(compDto.getName())
+                    .orElse(null);
+            if (componentProduct == null) {
+                componentProduct = productRepository.findBySku(compDto.getName())
+                        .orElse(null);
+            }
+            if (componentProduct != null) {
+                BomComponent bomComponent = BomComponent.builder()
+                        .bom(bom)
+                        .component(componentProduct)
+                        .quantity(compDto.getQty() != null ? compDto.getQty() : 1)
+                        .build();
+                bomComponentRepository.save(bomComponent);
+            }
+        }
+
+        // Update product's bomId
+        product.setBomId(bom.getId());
+        productRepository.save(product);
     }
 
     @Transactional
