@@ -25,6 +25,7 @@ import {
   Divider,
   Chip,
   TextField,
+  Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -425,33 +426,34 @@ export default function Products() {
                     return (
                       <Stack key={field.id} direction="row" spacing={2} sx={{ mb: 2, alignItems: 'flex-start' }}>
                         <FormControl fullWidth error={!!componentError?.name}>
-                          <InputLabel shrink>Component Product</InputLabel>
                           <Controller
                             name={`bomComponents.${idx}.name` as const}
                             control={control}
-                            render={({ field: selectField }) => (
-                              <Select
-                                {...selectField}
-                                label="Component Product"
-                                displayEmpty
-                                value={selectField.value ?? ''}
-                              >
-                                <MenuItem value="" disabled>Select component</MenuItem>
-                                {products
+                            render={({ field: { onChange, value } }) => (
+                              <Autocomplete
+                                freeSolo
+                                options={products
                                   .filter((p) => p.name !== currentProductName)
-                                  .map((p) => (
-                                    <MenuItem key={p.id} value={p.name}>
-                                      {p.name} (SKU: {p.sku})
-                                    </MenuItem>
-                                  ))}
-                              </Select>
+                                  .map((p) => p.name)}
+                                value={value ?? ''}
+                                onChange={(_, newValue) => {
+                                  onChange(newValue ?? '');
+                                }}
+                                onInputChange={(_, newInputValue) => {
+                                  onChange(newInputValue ?? '');
+                                }}
+                                renderInput={(params) => (
+                                  <TextField
+                                    {...params}
+                                    label="Component Product"
+                                    error={!!componentError?.name}
+                                    helperText={componentError?.name?.message}
+                                    variant="outlined"
+                                  />
+                                )}
+                              />
                             )}
                           />
-                          {componentError?.name && (
-                            <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
-                              {componentError.name.message}
-                            </Typography>
-                          )}
                         </FormControl>
                         
                         <Controller

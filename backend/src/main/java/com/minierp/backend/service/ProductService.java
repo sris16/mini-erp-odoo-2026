@@ -162,14 +162,40 @@ public class ProductService {
                 componentProduct = productRepository.findBySku(compDto.getName())
                         .orElse(null);
             }
-            if (componentProduct != null) {
-                BomComponent bomComponent = BomComponent.builder()
-                        .bom(bom)
-                        .component(componentProduct)
-                        .quantity(compDto.getQty() != null ? compDto.getQty() : 1)
+            if (componentProduct == null) {
+                String name = compDto.getName().trim();
+                String sku = "RAW-" + name.toUpperCase().replaceAll("[^A-Z0-9]", "-");
+                int suffix = 1;
+                String baseSku = sku;
+                while (productRepository.findBySku(sku).isPresent()) {
+                    sku = baseSku + "-" + suffix++;
+                }
+                componentProduct = Product.builder()
+                        .name(name)
+                        .sku(sku)
+                        .salesPrice(java.math.BigDecimal.ZERO)
+                        .costPrice(java.math.BigDecimal.ZERO)
+                        .onHandQty(0)
+                        .reservedQty(0)
+                        .procurementStrategy(ProcurementStrategy.MTS)
+                        .procurementType(ProcurementType.PURCHASE)
                         .build();
-                bomComponentRepository.save(bomComponent);
+                componentProduct = productRepository.save(componentProduct);
+                
+                String username = getCurrentUsername();
+                AuditLog rawAudit = AuditLog.builder()
+                        .username(username)
+                        .action("AUTO_CREATE_RAW_MATERIAL")
+                        .details(String.format("Automatically created raw material component '%s' (SKU: %s) during Product BoM setup.", name, sku))
+                        .build();
+                auditLogRepository.save(rawAudit);
             }
+            BomComponent bomComponent = BomComponent.builder()
+                    .bom(bom)
+                    .component(componentProduct)
+                    .quantity(compDto.getQty() != null ? compDto.getQty() : 1)
+                    .build();
+            bomComponentRepository.save(bomComponent);
         }
 
         // Update product's bomId

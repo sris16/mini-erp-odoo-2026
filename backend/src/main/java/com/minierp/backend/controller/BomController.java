@@ -72,7 +72,31 @@ public class BomController {
         List<BomDto.ComponentDto> savedComponents = new ArrayList<>();
         for (BomDto.ComponentDto cDto : request.getComponents()) {
             Product compProduct = productRepository.findByName(cDto.getName())
-                    .orElseThrow(() -> new IllegalArgumentException("Component product not found: " + cDto.getName()));
+                    .orElse(null);
+            if (compProduct == null) {
+                compProduct = productRepository.findBySku(cDto.getName())
+                        .orElse(null);
+            }
+            if (compProduct == null) {
+                String name = cDto.getName().trim();
+                String sku = "RAW-" + name.toUpperCase().replaceAll("[^A-Z0-9]", "-");
+                int suffix = 1;
+                String baseSku = sku;
+                while (productRepository.findBySku(sku).isPresent()) {
+                    sku = baseSku + "-" + suffix++;
+                }
+                compProduct = Product.builder()
+                        .name(name)
+                        .sku(sku)
+                        .salesPrice(java.math.BigDecimal.ZERO)
+                        .costPrice(java.math.BigDecimal.ZERO)
+                        .onHandQty(0)
+                        .reservedQty(0)
+                        .procurementStrategy(com.minierp.backend.model.ProcurementStrategy.MTS)
+                        .procurementType(com.minierp.backend.model.ProcurementType.PURCHASE)
+                        .build();
+                compProduct = productRepository.save(compProduct);
+            }
 
             BomComponent comp = BomComponent.builder()
                     .bom(bom)

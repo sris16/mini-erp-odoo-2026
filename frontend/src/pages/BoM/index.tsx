@@ -27,6 +27,7 @@ import {
   List,
   ListItem,
   ListItemText,
+  Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -265,19 +266,30 @@ export default function BoM() {
               {fields.map((field, index) => (
                 <Stack direction="row" spacing={2} key={field.id} sx={{ alignItems: 'flex-start' }}>
                   <FormControl fullWidth error={!!errors.components?.[index]?.name}>
-                    <InputLabel shrink>Component Product</InputLabel>
                     <Controller
                       name={`components.${index}.name`}
                       control={control}
-                      render={({ field: subField }) => (
-                        <Select {...subField} label="Component Product" displayEmpty>
-                          <MenuItem value="" disabled>Select component</MenuItem>
-                          {products.map((p) => (
-                            <MenuItem key={p.id} value={p.name}>
-                              {p.name}
-                            </MenuItem>
-                          ))}
-                        </Select>
+                      render={({ field: { onChange, value } }) => (
+                        <Autocomplete
+                          freeSolo
+                          options={products.map((p) => p.name)}
+                          value={value ?? ''}
+                          onChange={(_, newValue) => {
+                            onChange(newValue ?? '');
+                          }}
+                          onInputChange={(_, newInputValue) => {
+                            onChange(newInputValue ?? '');
+                          }}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Component Product"
+                              error={!!errors.components?.[index]?.name}
+                              helperText={errors.components?.[index]?.name?.message}
+                              variant="outlined"
+                            />
+                          )}
+                        />
                       )}
                     />
                   </FormControl>
