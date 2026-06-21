@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -32,6 +32,7 @@ import {
   Search as SearchIcon,
   Receipt as InvoiceIcon,
   Delete as DeleteIcon,
+  Warning as WarnIcon,
 } from '@mui/icons-material';
 import { useForm, Controller, useWatch, useFieldArray } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -47,6 +48,7 @@ import {
 } from '../../store';
 import DebouncedTextField from '../../components/common/DebouncedTextField';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const schema = yup.object().shape({
   customerName: yup.string().required('Customer is required'),
   lines: yup
@@ -80,6 +82,21 @@ export default function Sales() {
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [activeDeliveryOrder, setActiveDeliveryOrder] = useState<SalesOrder | null>(null);
   const [deliveryQuantities, setDeliveryQuantities] = useState<Record<number, number>>({});
+  const [infoModal, setInfoModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    type: 'success',
+  });
+
+  const showInfoPopup = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setInfoModal({ open: true, title, message, type });
+  };
 
   useEffect(() => {
     dispatch(salesActions.fetchSalesOrders());
@@ -88,6 +105,35 @@ export default function Sales() {
     dispatch(invoicingActions.fetchInvoices());
   }, [dispatch]);
 
+  const dynamicSchema = useMemo(() => {
+    return yup.object().shape({
+      customerName: yup.string().required('Customer is required'),
+      lines: yup
+        .array()
+        .of(
+          yup.object().shape({
+            productId: yup.number().typeError('Product is required').required('Product is required'),
+            qtyOrdered: yup
+              .number()
+              .transform((value) => (Number.isNaN(value) ? undefined : value))
+              .required('Please enter a value')
+              .min(1, 'Please enter a value greater than 0')
+              .integer('Must be a whole number')
+              .test('stock-check', 'Insufficient stock available', function (value) {
+                const { productId } = this.parent;
+                if (!productId || !value) return true;
+                const prod = products.find((p) => p.id === productId);
+                if (!prod) return true;
+                const available = prod.onHandQty - prod.reservedQty;
+                return value <= available;
+              }),
+          })
+        )
+        .min(1, 'At least one product line is required')
+        .required(),
+    });
+  }, [products]);
+
   const {
     control,
     handleSubmit,
@@ -95,7 +141,7 @@ export default function Sales() {
     formState: { errors },
   } = useForm<SalesOrderFormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: yupResolver(schema) as any,
+    resolver: yupResolver(dynamicSchema) as any,
     defaultValues: {
       customerName: '',
       lines: [{ productId: undefined as unknown as number, qtyOrdered: 1 }],
@@ -127,6 +173,21 @@ export default function Sales() {
   };
 
   const onSubmit = (data: SalesOrderFormData) => {
+    for (const line of data.lines) {
+      const prod = products.find((p) => p.id === line.productId);
+      if (prod) {
+        const available = prod.onHandQty - prod.reservedQty;
+        if (line.qtyOrdered > available) {
+          showInfoPopup(
+            'Insufficient Stock Restriction',
+            `You cannot place an order for ${prod.name} because the ordered quantity (${line.qtyOrdered}) exceeds the available stock (${available}).`,
+            'error'
+          );
+          return;
+        }
+      }
+    }
+
     const linesPayload = data.lines.map((line) => {
       const prod = products.find((p) => p.id === line.productId);
       return {
@@ -141,14 +202,40 @@ export default function Sales() {
         customerName: data.customerName,
         lines: linesPayload,
       })
-    );
+    )
+      .unwrap()
+      .then(() => {
+        showInfoPopup(
+          'Task Completed Successfully',
+          'The Sales Order has been successfully created and saved.',
+          'success'
+        );
+        dispatch(salesActions.fetchSalesOrders());
+      })
+      .catch((err: unknown) => {
+        const error = err as { message?: string };
+        showInfoPopup('Error Creating Sales Order', error?.message || 'Failed to create sales order.', 'error');
+      });
 
     setOpen(false);
   };
 
   const handleApprove = (row: SalesOrder) => {
     if (row.status === 'Draft') {
-      dispatch(salesActions.confirmSalesOrder(row.id));
+      dispatch(salesActions.confirmSalesOrder(row.id))
+        .unwrap()
+        .then(() => {
+          showInfoPopup(
+            'Task Completed Successfully',
+            `Sales Order ${row.soNumber} has been successfully approved and confirmed.`,
+            'success'
+          );
+          dispatch(salesActions.fetchSalesOrders());
+        })
+        .catch((err: unknown) => {
+          const error = err as { message?: string };
+          showInfoPopup('Error Approving Sales Order', error?.message || 'Failed to approve sales order.', 'error');
+        });
     } else if (row.status === 'Pending Delivery') {
       setActiveDeliveryOrder(row);
       const initialQtys: Record<number, number> = {};
@@ -282,9 +369,20 @@ export default function Sales() {
                               <IconButton
                                 size="small"
                                 onClick={() => {
-                                  dispatch(invoicingActions.createInvoiceFromSO(row.id)).then(() => {
-                                    dispatch(invoicingActions.fetchInvoices());
-                                  });
+                                  dispatch(invoicingActions.createInvoiceFromSO(row.id))
+                                    .unwrap()
+                                    .then(() => {
+                                      showInfoPopup(
+                                        'Task Completed Successfully',
+                                        'Invoice has been successfully created from the Sales Order.',
+                                        'success'
+                                      );
+                                      dispatch(invoicingActions.fetchInvoices());
+                                    })
+                                    .catch((err: unknown) => {
+                                      const error = err as { message?: string };
+                                      showInfoPopup('Error Creating Invoice', error?.message || 'Failed to create invoice.', 'error');
+                                    });
                                 }}
                                 color="primary"
                                 disabled={invoices.some((inv) => inv.salesOrderId === row.id)}
@@ -353,13 +451,35 @@ export default function Sales() {
                       name={`lines.${index}.productId`}
                       control={control}
                       render={({ field: subField }) => (
-                        <Select {...subField} label="Product" displayEmpty value={subField.value ?? ''}>
+                        <Select
+                          {...subField}
+                          label="Product"
+                          displayEmpty
+                          value={subField.value ?? ''}
+                          renderValue={(selected) => {
+                            if (!selected) return <em>Select product</em>;
+                            const prod = products.find((p) => p.id === Number(selected));
+                            return prod ? `${prod.name} ($${prod.salesPrice.toFixed(2)})` : '';
+                          }}
+                        >
                           <MenuItem value="" disabled>Select product</MenuItem>
-                          {products.map((p) => (
-                            <MenuItem key={p.id} value={p.id}>
-                              {p.name} (${p.salesPrice.toFixed(2)})
-                            </MenuItem>
-                          ))}
+                          {products.map((p) => {
+                            const available = p.onHandQty - p.reservedQty;
+                            return (
+                              <MenuItem key={p.id} value={p.id} disabled={available <= 0}>
+                                <Box sx={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                                  <span>{p.name} (${p.salesPrice.toFixed(2)})</span>
+                                  {available <= 0 ? (
+                                    <Chip label="Out of Stock" size="small" color="error" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                  ) : (
+                                    <Typography variant="caption" color="text.secondary">
+                                      {available} available
+                                    </Typography>
+                                  )}
+                                </Box>
+                              </MenuItem>
+                            );
+                          })}
                         </Select>
                       )}
                     />
@@ -513,9 +633,20 @@ export default function Sales() {
                     id: activeDeliveryOrder.id,
                     partials,
                   })
-                ).then(() => {
-                  dispatch(salesActions.fetchSalesOrders());
-                });
+                )
+                  .unwrap()
+                  .then(() => {
+                    showInfoPopup(
+                      'Task Completed Successfully',
+                      `Shipment for Sales Order ${activeDeliveryOrder.soNumber} has been successfully confirmed and items delivered.`,
+                      'success'
+                    );
+                    dispatch(salesActions.fetchSalesOrders());
+                  })
+                  .catch((err: unknown) => {
+                    const error = err as { message?: string };
+                    showInfoPopup('Error Confirming Shipment', error?.message || 'Failed to deliver goods.', 'error');
+                  });
               }
               setDeliveryOpen(false);
             }}
@@ -533,6 +664,41 @@ export default function Sales() {
             }
           >
             Confirm Shipment
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Universal Info/Notification Dialog */}
+      <Dialog
+        open={infoModal.open}
+        onClose={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+          {infoModal.type === 'success' ? (
+            <ApproveIcon color="success" sx={{ fontSize: 24 }} />
+          ) : (
+            <WarnIcon color="error" sx={{ fontSize: 24 }} />
+          )}
+          {infoModal.title}
+        </DialogTitle>
+        <Divider />
+        <DialogContent>
+          <Typography variant="body1" sx={{ py: 1 }}>
+            {infoModal.message}
+          </Typography>
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+            variant="contained"
+            color={infoModal.type === 'success' ? 'success' : 'error'}
+            fullWidth
+            sx={{ py: 1, fontWeight: 600 }}
+          >
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>

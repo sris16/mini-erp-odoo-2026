@@ -151,7 +151,6 @@ export default function Dashboard() {
   const transfers = useAppSelector((state) => state.locations.transfers);
   const locations = useAppSelector((state) => state.locations.locations);
   const users = useAppSelector((state) => state.users.users);
-  const dashboardKpis = useAppSelector((state) => state.dashboard.kpis);
   const dashboardCharts = useAppSelector((state) => state.dashboard.charts);
   const currentUser = useAppSelector((state) => state.auth.user);
 
@@ -173,54 +172,64 @@ export default function Dashboard() {
   const orderStatuses = useMemo(() => {
     // Sales Orders
     const salesAll = {
-      draft: salesOrders.filter((o) => o.status === 'Draft').length,
-      confirmed: salesOrders.filter((o) => o.status === 'Pending Delivery').length,
-      partial: salesOrders.filter((o) => o.status === 'Pending Delivery' && o.qtyDelivered > 0).length,
-      delivered: salesOrders.filter((o) => o.status === 'Completed').length,
-      late: salesOrders.filter((o) => o.status === 'Pending Delivery' && o.id % 4 === 0).length,
+      draft: salesOrders.filter((o) => o.rawStatus === 'DRAFT').length,
+      confirmed: salesOrders.filter((o) => o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_DELIVERED').length,
+      partial: salesOrders.filter((o) => o.rawStatus === 'PARTIALLY_DELIVERED').length,
+      delivered: salesOrders.filter((o) => o.rawStatus === 'FULLY_DELIVERED').length,
+      late: salesOrders.filter((o) => {
+        if (o.rawStatus !== 'CONFIRMED' || !o.orderDate) return false;
+        const created = new Date(o.orderDate);
+        const diffDays = (new Date().getTime() - created.getTime()) / (1000 * 3600 * 24);
+        return diffDays > 3; // older than 3 days
+      }).length,
     };
     const salesMy = {
-      draft: salesOrders.filter((o) => isMyOrder(o.id) && o.status === 'Draft').length,
-      confirmed: salesOrders.filter((o) => isMyOrder(o.id) && o.status === 'Pending Delivery').length,
-      delivered: salesOrders.filter((o) => isMyOrder(o.id) && o.status === 'Completed').length,
+      draft: salesOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'DRAFT').length,
+      confirmed: salesOrders.filter((o) => isMyOrder(o.id) && (o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_DELIVERED')).length,
+      delivered: salesOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'FULLY_DELIVERED').length,
     };
 
     // Purchase Orders
     const purchaseAll = {
-      draft: purchaseOrders.filter((o) => o.status === 'Draft').length,
-      confirmed: purchaseOrders.filter((o) => o.status === 'Approved').length,
-      partial: purchaseOrders.filter((o) => o.status === 'Approved' && o.qtyReceived > 0).length,
-      received: purchaseOrders.filter((o) => o.status === 'Received').length,
-      late: purchaseOrders.filter((o) => o.status === 'Approved' && o.id % 4 === 0).length,
+      draft: purchaseOrders.filter((o) => o.rawStatus === 'DRAFT').length,
+      confirmed: purchaseOrders.filter((o) => o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_RECEIVED').length,
+      partial: purchaseOrders.filter((o) => o.rawStatus === 'PARTIALLY_RECEIVED').length,
+      received: purchaseOrders.filter((o) => o.rawStatus === 'FULLY_RECEIVED').length,
+      late: purchaseOrders.filter((o) => {
+        if (o.rawStatus !== 'CONFIRMED' || !o.orderDate) return false;
+        const created = new Date(o.orderDate);
+        const diffDays = (new Date().getTime() - created.getTime()) / (1000 * 3600 * 24);
+        return diffDays > 3; // older than 3 days
+      }).length,
     };
     const purchaseMy = {
-      draft: purchaseOrders.filter((o) => isMyOrder(o.id) && o.status === 'Draft').length,
-      confirmed: purchaseOrders.filter((o) => isMyOrder(o.id) && o.status === 'Approved').length,
-      received: purchaseOrders.filter((o) => isMyOrder(o.id) && o.status === 'Received').length,
+      draft: purchaseOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'DRAFT').length,
+      confirmed: purchaseOrders.filter((o) => isMyOrder(o.id) && (o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_RECEIVED')).length,
+      received: purchaseOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'FULLY_RECEIVED').length,
     };
 
     // Manufacturing Orders
     const mfgAll = {
-      draft: mfgOrders.filter((o) => o.status === 'Draft').length,
-      confirmed: mfgOrders.filter((o) => o.status === 'Draft' && o.id % 3 === 0).length,
-      inProgress: mfgOrders.filter((o) => o.status === 'In Progress').length,
-      toClose: mfgOrders.filter((o) => o.status === 'In Progress' && o.id % 4 === 0).length,
-      done: mfgOrders.filter((o) => o.status === 'Completed').length,
+      draft: mfgOrders.filter((o) => o.rawStatus === 'DRAFT').length,
+      confirmed: mfgOrders.filter((o) => o.rawStatus === 'CONFIRMED').length,
+      inProgress: mfgOrders.filter((o) => o.rawStatus === 'IN_PROGRESS').length,
+      toClose: mfgOrders.filter((o) => o.rawStatus === 'IN_PROGRESS' && o.workOrders && o.workOrders.length > 0 && o.workOrders.every((w) => w.status === 'DONE')).length,
+      done: mfgOrders.filter((o) => o.rawStatus === 'DONE').length,
     };
     const mfgMy = {
-      confirmed: mfgOrders.filter((o) => isMyOrder(o.id) && o.status === 'Draft' && o.id % 3 === 0).length,
-      inProgress: mfgOrders.filter((o) => isMyOrder(o.id) && o.status === 'In Progress').length,
-      done: mfgOrders.filter((o) => isMyOrder(o.id) && o.status === 'Completed').length,
+      confirmed: mfgOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'CONFIRMED').length,
+      inProgress: mfgOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'IN_PROGRESS').length,
+      done: mfgOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'DONE').length,
     };
 
     return { salesAll, salesMy, purchaseAll, purchaseMy, mfgAll, mfgMy };
   }, [salesOrders, purchaseOrders, mfgOrders]);
 
-  // 2. Top Customers spent
+  // 2. Top Customers spent (Only valid/confirmed/delivered orders)
   const topCustomersData = useMemo(() => {
     const map: Record<string, number> = {};
     salesOrders.forEach((o) => {
-      if (o.status !== 'Cancelled') {
+      if (o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_DELIVERED' || o.rawStatus === 'FULLY_DELIVERED') {
         map[o.customerName] = (map[o.customerName] || 0) + o.total;
       }
     });
@@ -230,11 +239,11 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [salesOrders]);
 
-  // 3. Top Vendors spend
+  // 3. Top Vendors spend (Only valid/confirmed/received orders)
   const topVendorsData = useMemo(() => {
     const map: Record<string, number> = {};
     purchaseOrders.forEach((o) => {
-      if (o.status !== 'Cancelled') {
+      if (o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_RECEIVED' || o.rawStatus === 'FULLY_RECEIVED') {
         map[o.vendorName] = (map[o.vendorName] || 0) + o.total;
       }
     });
@@ -301,6 +310,27 @@ export default function Dashboard() {
   // -------------------------------------------------------------
   // Role-Based KPI & Widget Customization Mappings
   // -------------------------------------------------------------
+  // Real-time KPI Value calculations
+  const calculatedSalesRevenue = useMemo(() => {
+    return salesOrders
+      .filter((o) => o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_DELIVERED' || o.rawStatus === 'FULLY_DELIVERED')
+      .reduce((sum, o) => sum + o.total, 0);
+  }, [salesOrders]);
+
+  const calculatedPurchaseSpend = useMemo(() => {
+    return purchaseOrders
+      .filter((o) => o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_RECEIVED' || o.rawStatus === 'FULLY_RECEIVED')
+      .reduce((sum, o) => sum + o.total, 0);
+  }, [purchaseOrders]);
+
+  const calculatedStockValuation = useMemo(() => {
+    return products.reduce((sum, p) => sum + p.costPrice * p.onHandQty, 0);
+  }, [products]);
+
+  const calculatedPendingDeliveries = useMemo(() => {
+    return salesOrders.filter((o) => o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_DELIVERED').length;
+  }, [salesOrders]);
+
   const roleKpiCards = useMemo(() => {
     const kpis = [];
 
@@ -316,25 +346,25 @@ export default function Dashboard() {
       kpis.push(
         {
           title: 'Sales Revenue',
-          value: `$${(dashboardKpis?.totalSalesValue || salesOrders.reduce((sum, o) => sum + (o.status !== 'Cancelled' ? o.total : 0), 0)).toFixed(2)}`,
+          value: `$${calculatedSalesRevenue.toFixed(2)}`,
           icon: <SalesIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.primary.main,
         },
         {
           title: 'Purchase Spend',
-          value: `$${(dashboardKpis?.totalPurchaseValue || purchaseOrders.reduce((sum, o) => sum + (o.status !== 'Cancelled' ? o.total : 0), 0)).toFixed(2)}`,
+          value: `$${calculatedPurchaseSpend.toFixed(2)}`,
           icon: <PurchaseIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.warning.main,
         },
         {
           title: 'Stock Valuation',
-          value: `$${(dashboardKpis?.totalStockValue || products.reduce((sum, p) => sum + p.costPrice * p.onHandQty, 0)).toFixed(2)}`,
+          value: `$${calculatedStockValuation.toFixed(2)}`,
           icon: <InventoryIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.info.main,
         },
         {
           title: 'Pending Sales Deliveries',
-          value: salesOrders.filter((o) => o.status === 'Pending Delivery').length,
+          value: calculatedPendingDeliveries,
           icon: <DeliveryIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.success.main,
         },
@@ -349,13 +379,13 @@ export default function Dashboard() {
       kpis.push(
         {
           title: 'My Confirmed Orders',
-          value: salesOrders.filter((o) => isMyOrder(o.id) && o.status === 'Pending Delivery').length,
+          value: salesOrders.filter((o) => isMyOrder(o.id) && (o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_DELIVERED')).length,
           icon: <SalesIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.primary.main,
         },
         {
           title: 'My Draft Orders',
-          value: salesOrders.filter((o) => isMyOrder(o.id) && o.status === 'Draft').length,
+          value: salesOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'DRAFT').length,
           icon: <SalesIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.warning.main,
         },
@@ -370,13 +400,13 @@ export default function Dashboard() {
       kpis.push(
         {
           title: 'My Confirmed Purchases',
-          value: purchaseOrders.filter((o) => isMyOrder(o.id) && o.status === 'Approved').length,
+          value: purchaseOrders.filter((o) => isMyOrder(o.id) && (o.rawStatus === 'CONFIRMED' || o.rawStatus === 'PARTIALLY_RECEIVED')).length,
           icon: <PurchaseIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.primary.main,
         },
         {
           title: 'My Draft Purchases',
-          value: purchaseOrders.filter((o) => isMyOrder(o.id) && o.status === 'Draft').length,
+          value: purchaseOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'DRAFT').length,
           icon: <PurchaseIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.warning.main,
         },
@@ -391,19 +421,19 @@ export default function Dashboard() {
       kpis.push(
         {
           title: 'Active Mfg Orders',
-          value: mfgOrders.filter((o) => o.status === 'In Progress').length,
+          value: mfgOrders.filter((o) => o.rawStatus === 'IN_PROGRESS').length,
           icon: <MfgIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.primary.main,
         },
         {
           title: 'My Confirmed MOs',
-          value: mfgOrders.filter((o) => isMyOrder(o.id) && o.status === 'Draft').length,
+          value: mfgOrders.filter((o) => isMyOrder(o.id) && o.rawStatus === 'CONFIRMED').length,
           icon: <MfgIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.warning.main,
         },
         {
           title: 'Completed MOs',
-          value: mfgOrders.filter((o) => o.status === 'Completed').length,
+          value: mfgOrders.filter((o) => o.rawStatus === 'DONE').length,
           icon: <MfgIcon sx={{ fontSize: 28 }} />,
           color: theme.palette.success.main,
         }
@@ -432,7 +462,23 @@ export default function Dashboard() {
     }
 
     return kpis;
-  }, [userRole, products, salesOrders, purchaseOrders, mfgOrders, customers, vendors, locations, transfers, users, dashboardKpis, theme]);
+  }, [
+    userRole,
+    products,
+    salesOrders,
+    purchaseOrders,
+    mfgOrders,
+    customers,
+    vendors,
+    locations,
+    transfers,
+    users,
+    theme,
+    calculatedSalesRevenue,
+    calculatedPurchaseSpend,
+    calculatedStockValuation,
+    calculatedPendingDeliveries,
+  ]);
 
   return (
     <Box sx={{ flexGrow: 1 }}>

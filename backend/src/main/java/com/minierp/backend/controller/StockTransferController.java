@@ -1,6 +1,7 @@
 package com.minierp.backend.controller;
 
 import com.minierp.backend.model.*;
+import com.minierp.backend.dto.LocationStockRequest;
 import com.minierp.backend.service.StockTransferService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,9 +23,50 @@ public class StockTransferController {
         return ResponseEntity.ok(stockTransferService.getAllLocations());
     }
 
+    @PostMapping("/locations")
+    public ResponseEntity<?> createLocation(@RequestBody WarehouseLocation location) {
+        try {
+            WarehouseLocation created = stockTransferService.createLocation(location);
+            return ResponseEntity.ok(created);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     @GetMapping("/locations/stock")
     public ResponseEntity<List<LocationStock>> getLocationStocks() {
         return ResponseEntity.ok(stockTransferService.getAllLocationStocks());
+    }
+
+    @PostMapping("/locations/stock")
+    public ResponseEntity<?> updateLocationStock(@RequestBody LocationStockRequest request) {
+        try {
+            if (request.getProductId() == null) {
+                throw new IllegalArgumentException("Product ID is required");
+            }
+            if (request.getLocationId() == null) {
+                throw new IllegalArgumentException("Location ID is required");
+            }
+            if (request.getQuantity() == null || request.getQuantity() < 0) {
+                throw new IllegalArgumentException("Quantity must be non-negative");
+            }
+            LocationStock updated = stockTransferService.addOrUpdateLocationStock(
+                    request.getProductId(), request.getLocationId(), request.getQuantity()
+            );
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/locations/{id}")
+    public ResponseEntity<?> deleteLocation(@PathVariable Long id) {
+        try {
+            stockTransferService.deleteLocation(id);
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
     @GetMapping("/transfers")

@@ -26,6 +26,8 @@ import {
   Add as AddIcon,
   PlayArrow as StartIcon,
   Check as DoneIcon,
+  CheckCircle as ApproveIcon,
+  Warning as WarnIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -58,6 +60,21 @@ export default function Manufacturing() {
   const boms = useAppSelector((state) => state.bom.items);
 
   const [open, setOpen] = useState(false);
+  const [infoModal, setInfoModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    type: 'success',
+  });
+
+  const showInfoPopup = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setInfoModal({ open: true, title, message, type });
+  };
 
   const getComponentCost = (order: ManufacturingOrder) => {
     const bom = boms.find((b) => b.finishedProduct === order.productName);
@@ -112,21 +129,116 @@ export default function Manufacturing() {
   };
 
   const onSubmit = (data: ManufacturingOrderFormData) => {
+    const bom = boms.find((b) => b.finishedProduct === data.productName);
+    if (bom) {
+      const shortages: string[] = [];
+      bom.components.forEach((comp) => {
+        const compProduct = products.find((p) => p.name === comp.name);
+        const compAvailable = compProduct ? compProduct.onHandQty - compProduct.reservedQty : 0;
+        const required = comp.qty * data.quantity;
+        if (compAvailable < required) {
+          shortages.push(`${comp.name} (Required: ${required}, Available: ${compAvailable})`);
+        }
+      });
+      if (shortages.length > 0) {
+        showInfoPopup(
+          'Insufficient Stock Restriction',
+          `You cannot create this Manufacturing Order because the following components have insufficient stock:\n\n${shortages.join('\n')}`,
+          'error'
+        );
+        return;
+      }
+    } else {
+      showInfoPopup(
+        'No BoM Found',
+        `No Bill of Materials defined for "${data.productName}". Please define a BoM first.`,
+        'error'
+      );
+      return;
+    }
+
     dispatch(
       manufacturingActions.addManufacturingOrder({
         productName: data.productName,
         quantity: data.quantity,
       })
-    );
+    )
+      .unwrap()
+      .then(() => {
+        showInfoPopup(
+          'Task Completed Successfully',
+          'The Manufacturing Order has been successfully created and saved in DRAFT status.',
+          'success'
+        );
+        dispatch(manufacturingActions.fetchManufacturingOrders());
+      })
+      .catch((err: unknown) => {
+        const error = err as { message?: string };
+        showInfoPopup('Error Creating Manufacturing Order', error?.message || 'Failed to create MO.', 'error');
+      });
 
     setOpen(false);
   };
 
   const handleAdvanceStatus = (row: ManufacturingOrder) => {
     if (row.status === 'Draft') {
-      dispatch(manufacturingActions.confirmManufacturingOrder(row.id));
+      const bom = boms.find((b) => b.finishedProduct === row.productName);
+      if (bom) {
+        const shortages: string[] = [];
+        bom.components.forEach((comp) => {
+          const compProduct = products.find((p) => p.name === comp.name);
+          const compAvailable = compProduct ? compProduct.onHandQty - compProduct.reservedQty : 0;
+          const required = comp.qty * row.quantity;
+          if (compAvailable < required) {
+            shortages.push(`${comp.name} (Required: ${required}, Available: ${compAvailable})`);
+          }
+        });
+        if (shortages.length > 0) {
+          showInfoPopup(
+            'Insufficient Stock Restriction',
+            `You cannot confirm this Manufacturing Order because the following components have insufficient stock:\n\n${shortages.join('\n')}`,
+            'error'
+          );
+          return;
+        }
+      } else {
+        showInfoPopup(
+          'No BoM Found',
+          `No Bill of Materials defined for "${row.productName}".`,
+          'error'
+        );
+        return;
+      }
+
+      dispatch(manufacturingActions.confirmManufacturingOrder(row.id))
+        .unwrap()
+        .then(() => {
+          showInfoPopup(
+            'Task Completed Successfully',
+            `Manufacturing Order ${row.moNumber} has been successfully confirmed and components reserved.`,
+            'success'
+          );
+          dispatch(manufacturingActions.fetchManufacturingOrders());
+        })
+        .catch((err: unknown) => {
+          const error = err as { message?: string };
+          showInfoPopup('Error Confirming MO', error?.message || 'Failed to confirm MO.', 'error');
+        });
     } else if (row.status === 'In Progress') {
-      dispatch(manufacturingActions.completeManufacturingOrder(row.id));
+      dispatch(manufacturingActions.completeManufacturingOrder(row.id))
+        .unwrap()
+        .then(() => {
+          showInfoPopup(
+            'Task Completed Successfully',
+            `Manufacturing Order ${row.moNumber} has been completed. Finished goods added to stock!`,
+            'success'
+          );
+          dispatch(manufacturingActions.fetchManufacturingOrders());
+        })
+        .catch((err: unknown) => {
+          const error = err as { message?: string };
+          showInfoPopup('Error Completing MO', error?.message || 'Failed to complete MO.', 'error');
+        });
     }
   };
 
@@ -260,7 +372,22 @@ export default function Manufacturing() {
                                       {wo.status === 'READY' && (
                                         <IconButton 
                                           size="small" 
-                                          onClick={() => dispatch(manufacturingActions.startWorkOrder({ moId: order.id, woId: wo.id }))}
+                                          onClick={() => {
+                                            dispatch(manufacturingActions.startWorkOrder({ moId: order.id, woId: wo.id }))
+                                              .unwrap()
+                                              .then(() => {
+                                                showInfoPopup(
+                                                  'Task Completed Successfully',
+                                                  `Work center operation '${wo.workCenterName}' has been successfully started.`,
+                                                  'success'
+                                                );
+                                                dispatch(manufacturingActions.fetchManufacturingOrders());
+                                              })
+                                              .catch((err: unknown) => {
+                                                const error = err as { message?: string };
+                                                showInfoPopup('Error Starting Work Order', error?.message || 'Failed to start operation.', 'error');
+                                              });
+                                          }}
                                           color="primary"
                                           sx={{ p: 0.25 }}
                                         >
@@ -270,7 +397,22 @@ export default function Manufacturing() {
                                       {wo.status === 'IN_PROGRESS' && (
                                         <IconButton 
                                           size="small" 
-                                          onClick={() => dispatch(manufacturingActions.completeWorkOrder({ moId: order.id, woId: wo.id }))}
+                                          onClick={() => {
+                                            dispatch(manufacturingActions.completeWorkOrder({ moId: order.id, woId: wo.id }))
+                                              .unwrap()
+                                              .then(() => {
+                                                showInfoPopup(
+                                                  'Task Completed Successfully',
+                                                  `Work center operation '${wo.workCenterName}' has been successfully completed.`,
+                                                  'success'
+                                                );
+                                                dispatch(manufacturingActions.fetchManufacturingOrders());
+                                              })
+                                              .catch((err: unknown) => {
+                                                const error = err as { message?: string };
+                                                showInfoPopup('Error Completing Work Order', error?.message || 'Failed to complete operation.', 'error');
+                                              });
+                                          }}
                                           color="success"
                                           sx={{ p: 0.25 }}
                                         >
@@ -313,15 +455,52 @@ export default function Manufacturing() {
                   name="productName"
                   control={control}
                   render={({ field }) => (
-                    <Select {...field} label="Product to Produce" displayEmpty>
+                    <Select
+                      {...field}
+                      label="Product to Produce"
+                      displayEmpty
+                      value={field.value ?? ''}
+                      renderValue={(selected) => {
+                        if (!selected) return <em>Select a manufactured product</em>;
+                        return String(selected);
+                      }}
+                    >
                       <MenuItem value="" disabled>Select a manufactured product</MenuItem>
                       {products
                         .filter((p) => p.procurementType === 'Manufactured')
-                        .map((p) => (
-                          <MenuItem key={p.id} value={p.name}>
-                            {p.name}
-                          </MenuItem>
-                        ))}
+                        .map((p) => {
+                          const bom = boms.find((b) => b.finishedProduct === p.name);
+                          let componentsAvailable = true;
+                          let shortageCount = 0;
+                          if (bom) {
+                            bom.components.forEach((comp) => {
+                              const compProduct = products.find((prod) => prod.name === comp.name);
+                              const compAvail = compProduct ? compProduct.onHandQty - compProduct.reservedQty : 0;
+                              if (compAvail < comp.qty) {
+                                componentsAvailable = false;
+                                shortageCount++;
+                              }
+                            });
+                          } else {
+                            componentsAvailable = false; // No BoM defined yet
+                          }
+                          return (
+                            <MenuItem key={p.id} value={p.name}>
+                              <Box sx={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                                <span>{p.name}</span>
+                                {!bom ? (
+                                  <Chip label="No BoM Defined" size="small" color="default" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                ) : !componentsAvailable ? (
+                                  <Chip label={`Shortage (${shortageCount})`} size="small" color="warning" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                ) : (
+                                  <Typography variant="caption" color="success.main" sx={{ fontSize: '0.75rem', fontWeight: 600 }}>
+                                    Components Ready
+                                  </Typography>
+                                )}
+                              </Box>
+                            </MenuItem>
+                          );
+                        })}
                     </Select>
                   )}
                 />
@@ -363,6 +542,41 @@ export default function Manufacturing() {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Universal Info/Notification Dialog */}
+      <Dialog
+        open={infoModal.open}
+        onClose={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+          {infoModal.type === 'success' ? (
+            <ApproveIcon color="success" sx={{ fontSize: 24 }} />
+          ) : (
+            <WarnIcon color="error" sx={{ fontSize: 24 }} />
+          )}
+          {infoModal.title}
+        </DialogTitle>
+        <Divider />
+        <DialogContent>
+          <Typography variant="body1" sx={{ py: 1 }}>
+            {infoModal.message}
+          </Typography>
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+            variant="contained"
+            color={infoModal.type === 'success' ? 'success' : 'error'}
+            fullWidth
+            sx={{ py: 1, fontWeight: 600 }}
+          >
+            Cancel
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

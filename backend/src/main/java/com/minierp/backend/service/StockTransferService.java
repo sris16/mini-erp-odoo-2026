@@ -135,11 +135,87 @@ public class StockTransferService {
                 .username(username)
                 .action("COMPLETE_STOCK_TRANSFER")
                 .details(String.format("Completed stock transfer %s. Relocated %d units of %s from %s to %s",
-                        doc, qty, product.getName(), src.getName(), dest.getName()))
+                         doc, qty, product.getName(), src.getName(), dest.getName()))
                 .build();
         auditLogRepository.save(auditLog);
 
         return completed;
+    }
+
+    @Transactional
+    public WarehouseLocation createLocation(WarehouseLocation location) {
+        if (location.getName() == null || location.getName().trim().isEmpty()) {
+            throw new IllegalArgumentException("Location name is required");
+        }
+        if (location.getCode() == null || location.getCode().trim().isEmpty()) {
+            throw new IllegalArgumentException("Location code is required");
+        }
+        String code = location.getCode().trim().toUpperCase();
+        if (warehouseLocationRepository.findByCode(code).isPresent()) {
+            throw new IllegalArgumentException("Location with code '" + code + "' already exists");
+        }
+        location.setCode(code);
+        location.setName(location.getName().trim());
+        
+        WarehouseLocation saved = warehouseLocationRepository.save(location);
+        
+        String username = getCurrentUsername();
+        AuditLog auditLog = AuditLog.builder()
+                .username(username)
+                .action("CREATE_LOCATION")
+                .details(String.format("Created new warehouse location %s (%s)", saved.getName(), saved.getCode()))
+                .build();
+        auditLogRepository.save(auditLog);
+        
+        return saved;
+    }
+
+    @Transactional
+    public void deleteLocation(Long id) {
+        WarehouseLocation location = warehouseLocationRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Location not found"));
+        
+        if ("MAIN".equals(location.getCode())) {
+            throw new IllegalArgumentException("Cannot delete the default MAIN location");
+        }
+
+        List<LocationStock> stocks = locationStockRepository.findByLocationId(id);
+        boolean hasStock = stocks.stream().anyMatch(s -> s.getOnHandQty() > 0);
+        if (hasStock) {
+            throw new IllegalStateException("Cannot delete location '" + location.getName() + "' because it currently contains active product stock");
+        }
+
+        locationStockRepository.deleteAll(stocks);
+        warehouseLocationRepository.delete(location);
+        
+        String username = getCurrentUsername();
+        AuditLog auditLog = AuditLog.builder()
+                .username(username)
+                .action("DELETE_LOCATION")
+                .details(String.format("Deleted warehouse location %s (%s)", location.getName(), location.getCode()))
+                .build();
+        auditLogRepository.save(auditLog);
+    }
+
+    @Transactional
+    public LocationStock addOrUpdateLocationStock(Long productId, Long locationId, int quantity) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+        WarehouseLocation location = warehouseLocationRepository.findById(locationId)
+                .orElseThrow(() -> new IllegalArgumentException("Location not found"));
+        
+        LocationStock existing = locationStockRepository.findByProductIdAndLocationId(productId, locationId).orElse(null);
+        int currentQty = existing != null ? existing.getOnHandQty() : 0;
+        int diff = quantity - currentQty;
+        
+        if (diff > 0) {
+            stockLedgerService.logMovement(product, diff, StockMovementType.IN, "Manual Adjustment", location);
+        } else if (diff < 0) {
+            stockLedgerService.logMovement(product, -diff, StockMovementType.OUT, "Manual Adjustment", location);
+        }
+        
+        return locationStockRepository.findByProductIdAndLocationId(productId, locationId)
+                .orElseThrow(() -> new IllegalStateException("Failed to update location stock"));
     }
 
     private String getCurrentUsername() {

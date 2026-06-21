@@ -32,6 +32,7 @@ import {
   Search as SearchIcon,
   Receipt as BillIcon,
   Delete as DeleteIcon,
+  Warning as WarnIcon,
 } from '@mui/icons-material';
 import { useForm, Controller, useWatch, useFieldArray } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -80,6 +81,21 @@ export default function Purchase() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [activeReceiveOrder, setActiveReceiveOrder] = useState<PurchaseOrder | null>(null);
   const [receiveQuantities, setReceiveQuantities] = useState<Record<number, number>>({});
+  const [infoModal, setInfoModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    type: 'success',
+  });
+
+  const showInfoPopup = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setInfoModal({ open: true, title, message, type });
+  };
 
   useEffect(() => {
     dispatch(purchaseActions.fetchPurchaseOrders());
@@ -141,14 +157,40 @@ export default function Purchase() {
         vendorName: data.vendorName,
         lines: linesPayload,
       })
-    );
+    )
+      .unwrap()
+      .then(() => {
+        showInfoPopup(
+          'Task Completed Successfully',
+          'The Purchase Order has been successfully created and saved.',
+          'success'
+        );
+        dispatch(purchaseActions.fetchPurchaseOrders());
+      })
+      .catch((err: unknown) => {
+        const error = err as { message?: string };
+        showInfoPopup('Error Creating Purchase Order', error?.message || 'Failed to create purchase order.', 'error');
+      });
 
     setOpen(false);
   };
 
   const handleApprove = (row: PurchaseOrder) => {
     if (row.status === 'Draft') {
-      dispatch(purchaseActions.confirmPurchaseOrder(row.id));
+      dispatch(purchaseActions.confirmPurchaseOrder(row.id))
+        .unwrap()
+        .then(() => {
+          showInfoPopup(
+            'Task Completed Successfully',
+            `Purchase Order ${row.poNumber} has been successfully approved and confirmed.`,
+            'success'
+          );
+          dispatch(purchaseActions.fetchPurchaseOrders());
+        })
+        .catch((err: unknown) => {
+          const error = err as { message?: string };
+          showInfoPopup('Error Approving Purchase Order', error?.message || 'Failed to approve purchase order.', 'error');
+        });
     } else if (row.status === 'Approved') {
       setActiveReceiveOrder(row);
       const initialQtys: Record<number, number> = {};
@@ -282,9 +324,20 @@ export default function Purchase() {
                               <IconButton
                                 size="small"
                                 onClick={() => {
-                                  dispatch(invoicingActions.createBillFromPO(row.id)).then(() => {
-                                    dispatch(invoicingActions.fetchBills());
-                                  });
+                                  dispatch(invoicingActions.createBillFromPO(row.id))
+                                    .unwrap()
+                                    .then(() => {
+                                      showInfoPopup(
+                                        'Task Completed Successfully',
+                                        'Vendor Bill has been successfully created from the Purchase Order.',
+                                        'success'
+                                      );
+                                      dispatch(invoicingActions.fetchBills());
+                                    })
+                                    .catch((err: unknown) => {
+                                      const error = err as { message?: string };
+                                      showInfoPopup('Error Creating Vendor Bill', error?.message || 'Failed to create vendor bill.', 'error');
+                                    });
                                 }}
                                 color="primary"
                                 disabled={bills.some((bill) => bill.purchaseOrderId === row.id)}
@@ -353,13 +406,35 @@ export default function Purchase() {
                       name={`lines.${index}.productId`}
                       control={control}
                       render={({ field: subField }) => (
-                        <Select {...subField} label="Product" displayEmpty value={subField.value ?? ''}>
+                        <Select
+                          {...subField}
+                          label="Product"
+                          displayEmpty
+                          value={subField.value ?? ''}
+                          renderValue={(selected) => {
+                            if (!selected) return <em>Select product</em>;
+                            const prod = products.find((p) => p.id === Number(selected));
+                            return prod ? `${prod.name} ($${prod.costPrice.toFixed(2)})` : '';
+                          }}
+                        >
                           <MenuItem value="" disabled>Select product</MenuItem>
-                          {products.map((p) => (
-                            <MenuItem key={p.id} value={p.id}>
-                              {p.name} (${p.costPrice.toFixed(2)})
-                            </MenuItem>
-                          ))}
+                          {products.map((p) => {
+                            const available = p.onHandQty - p.reservedQty;
+                            return (
+                              <MenuItem key={p.id} value={p.id}>
+                                <Box sx={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                                  <span>{p.name} (${p.costPrice.toFixed(2)})</span>
+                                  {available <= 0 ? (
+                                    <Chip label="Out of Stock" size="small" color="error" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                  ) : (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Stock: {available}
+                                    </Typography>
+                                  )}
+                                </Box>
+                              </MenuItem>
+                            );
+                          })}
                         </Select>
                       )}
                     />
@@ -513,9 +588,20 @@ export default function Purchase() {
                     id: activeReceiveOrder.id,
                     partials,
                   })
-                ).then(() => {
-                  dispatch(purchaseActions.fetchPurchaseOrders());
-                });
+                )
+                  .unwrap()
+                  .then(() => {
+                    showInfoPopup(
+                      'Task Completed Successfully',
+                      `Stock from Purchase Order ${activeReceiveOrder.poNumber} has been successfully received.`,
+                      'success'
+                    );
+                    dispatch(purchaseActions.fetchPurchaseOrders());
+                  })
+                  .catch((err: unknown) => {
+                    const error = err as { message?: string };
+                    showInfoPopup('Error Receiving Stock', error?.message || 'Failed to receive goods.', 'error');
+                  });
               }
               setReceiveOpen(false);
             }}
@@ -533,6 +619,41 @@ export default function Purchase() {
             }
           >
             Confirm Receipt
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Universal Info/Notification Dialog */}
+      <Dialog
+        open={infoModal.open}
+        onClose={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+          {infoModal.type === 'success' ? (
+            <ApproveIcon color="success" sx={{ fontSize: 24 }} />
+          ) : (
+            <WarnIcon color="error" sx={{ fontSize: 24 }} />
+          )}
+          {infoModal.title}
+        </DialogTitle>
+        <Divider />
+        <DialogContent>
+          <Typography variant="body1" sx={{ py: 1 }}>
+            {infoModal.message}
+          </Typography>
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+            variant="contained"
+            color={infoModal.type === 'success' ? 'success' : 'error'}
+            fullWidth
+            sx={{ py: 1, fontWeight: 600 }}
+          >
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>

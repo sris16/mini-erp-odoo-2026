@@ -69,6 +69,8 @@ export interface SalesOrder {
   status: string; // Draft, Pending Delivery, Completed, Cancelled
   total: number;
   lines?: SalesOrderLine[];
+  rawStatus?: string;
+  orderDate?: string;
 }
 
 export interface PurchaseOrderLine {
@@ -90,6 +92,8 @@ export interface PurchaseOrder {
   status: string; // Draft, Approved, Received, Cancelled
   total: number;
   lines?: PurchaseOrderLine[];
+  rawStatus?: string;
+  orderDate?: string;
 }
 
 export interface BoMItem {
@@ -116,6 +120,8 @@ export interface ManufacturingOrder {
   quantity: number;
   status: 'Draft' | 'In Progress' | 'Completed';
   workOrders?: WorkOrder[];
+  rawStatus?: string;
+  createdDate?: string;
 }
 
 export interface AuditLog {
@@ -268,6 +274,7 @@ export interface ApiSalesOrderLine {
   qtyDelivered?: number;
   unitPrice: number;
   product?: {
+    id: number;
     name: string;
   };
 }
@@ -277,6 +284,7 @@ export interface ApiSalesOrder {
   customerName: string;
   status: string;
   lines: ApiSalesOrderLine[];
+  orderDate?: string;
 }
 
 export interface ApiPurchaseOrderLine {
@@ -285,6 +293,7 @@ export interface ApiPurchaseOrderLine {
   qtyReceived?: number;
   unitPrice: number;
   product?: {
+    id: number;
     name: string;
   };
 }
@@ -294,6 +303,7 @@ export interface ApiPurchaseOrder {
   vendorName: string;
   status: string;
   lines: ApiPurchaseOrderLine[];
+  orderDate?: string;
 }
 
 export interface ApiInvoiceLine {
@@ -389,6 +399,7 @@ export interface ApiManufacturingOrder {
     name: string;
   };
   qty: number;
+  createdDate?: string;
 }
 
 // ================= ASYNC THUNKS =================
@@ -492,7 +503,11 @@ export const addSalesOrder = createAsyncThunk(
     const payload = {
       customerName: order.customerName,
       status: 'DRAFT',
-      lines: order.lines,
+      lines: order.lines.map((line) => ({
+        product: { id: line.productId },
+        qtyOrdered: line.qtyOrdered,
+        unitPrice: line.unitPrice,
+      })),
     };
     const response = await api.post('/sales', payload);
     return response.data;
@@ -529,7 +544,11 @@ export const addPurchaseOrder = createAsyncThunk(
     const payload = {
       vendorName: order.vendorName,
       status: 'DRAFT',
-      lines: order.lines,
+      lines: order.lines.map((line) => ({
+        product: { id: line.productId },
+        qtyOrdered: line.qtyOrdered,
+        unitPrice: line.unitPrice,
+      })),
     };
     const response = await api.post('/purchase', payload);
     return response.data;
@@ -749,6 +768,30 @@ export const completeTransfer = createAsyncThunk('locations/completeTransfer', a
   return response.data;
 });
 
+export const createLocation = createAsyncThunk(
+  'locations/create',
+  async (location: { name: string; code: string }) => {
+    const response = await api.post('/locations', location);
+    return response.data;
+  }
+);
+
+export const deleteLocation = createAsyncThunk(
+  'locations/delete',
+  async (id: number) => {
+    await api.delete(`/locations/${id}`);
+    return id;
+  }
+);
+
+export const updateLocationStock = createAsyncThunk(
+  'locations/updateStock',
+  async (data: { productId: number; locationId: number; quantity: number }) => {
+    const response = await api.post('/locations/stock', data);
+    return response.data;
+  }
+);
+
 // User Management Thunks
 export const fetchUsers = createAsyncThunk('users/fetchUsers', async () => {
   const response = await api.get('/users');
@@ -938,7 +981,7 @@ const mapSalesOrder = (so: ApiSalesOrder): SalesOrder => {
   else if (so.status === 'CANCELLED') statusText = 'Cancelled';
 
   const lines = (so.lines || []).map((l: ApiSalesOrderLine) => ({
-    productId: l.productId,
+    productId: l.product?.id || l.productId,
     productName: l.product?.name || 'N/A',
     qtyOrdered: l.qtyOrdered,
     qtyDelivered: l.qtyDelivered || 0,
@@ -961,6 +1004,8 @@ const mapSalesOrder = (so: ApiSalesOrder): SalesOrder => {
     status: statusText,
     total: totalVal,
     lines,
+    rawStatus: so.status,
+    orderDate: so.orderDate,
   };
 };
 
@@ -1005,7 +1050,7 @@ const mapPurchaseOrder = (po: ApiPurchaseOrder): PurchaseOrder => {
   else if (po.status === 'CANCELLED') statusText = 'Cancelled';
 
   const lines = (po.lines || []).map((l: ApiPurchaseOrderLine) => ({
-    productId: l.productId,
+    productId: l.product?.id || l.productId,
     productName: l.product?.name || 'N/A',
     qtyOrdered: l.qtyOrdered,
     qtyReceived: l.qtyReceived || 0,
@@ -1028,6 +1073,8 @@ const mapPurchaseOrder = (po: ApiPurchaseOrder): PurchaseOrder => {
     status: statusText,
     total: totalVal,
     lines,
+    rawStatus: po.status,
+    orderDate: po.orderDate,
   };
 };
 
@@ -1117,6 +1164,8 @@ const mapManufacturingOrder = (mo: ApiManufacturingOrder): ManufacturingOrder =>
     quantity: mo.qty || 0,
     status: statusText,
     workOrders: mappedWos,
+    rawStatus: mo.status,
+    createdDate: mo.createdDate,
   };
 };
 
@@ -1567,6 +1616,38 @@ const locationsSlice = createSlice({
         };
       }
     });
+    builder.addCase(createLocation.fulfilled, (state, action) => {
+      state.locations.push(action.payload);
+    });
+    builder.addCase(deleteLocation.fulfilled, (state, action) => {
+      state.locations = state.locations.filter((l) => l.id !== action.payload);
+    });
+    builder.addCase(updateLocationStock.fulfilled, (state, action) => {
+      const updated = action.payload;
+      const mapped = {
+        id: updated.id,
+        product: {
+          id: updated.product.id,
+          name: updated.product.name,
+          sku: updated.product.sku,
+          costPrice: updated.product.costPrice,
+          salesPrice: updated.product.salesPrice,
+          onHandQty: updated.product.onHandQty,
+          reservedQty: updated.product.reservedQty || 0,
+          procurementStrategy: updated.product.procurementStrategy,
+          procurementType: updated.product.procurementType === 'MANUFACTURING' ? 'Manufactured' : 'Purchased' as 'Manufactured' | 'Purchased',
+        },
+        location: updated.location,
+        onHandQty: updated.onHandQty,
+        reservedQty: updated.reservedQty,
+      };
+      const idx = state.stocks.findIndex((s) => s.id === mapped.id);
+      if (idx !== -1) {
+        state.stocks[idx] = mapped;
+      } else {
+        state.stocks.push(mapped);
+      }
+    });
   },
 });
 
@@ -1654,5 +1735,14 @@ export const auditLogsActions = { fetchAuditLogs };
 export const dashboardActions = { fetchDashboardKpis, fetchDashboardCharts };
 export const reorderingRulesActions = { fetchReorderingRules, addReorderingRule, editReorderingRule, deleteReorderingRule, runReorderingScheduler };
 export const invoicingActions = { fetchInvoices, createInvoiceFromSO, postInvoice, payInvoice, fetchBills, createBillFromPO, postBill, payBill };
-export const locationsActions = { fetchLocations, fetchLocationStocks, fetchTransfers, createTransfer, completeTransfer };
+export const locationsActions = {
+  fetchLocations,
+  fetchLocationStocks,
+  fetchTransfers,
+  createTransfer,
+  completeTransfer,
+  createLocation,
+  deleteLocation,
+  updateLocationStock,
+};
 export const usersActions = { fetchUsers, addUser, editUser, deleteUser };

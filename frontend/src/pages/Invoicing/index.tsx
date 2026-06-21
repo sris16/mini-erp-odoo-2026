@@ -28,6 +28,8 @@ import {
   Search as SearchIcon,
   CheckCircle as PostIcon,
   Payments as PaymentIcon,
+  Warning as WarnIcon,
+  CheckCircle as ApproveIcon,
 } from '@mui/icons-material';
 import {
   useAppDispatch,
@@ -46,6 +48,23 @@ export default function Invoicing() {
   const [activeTab, setActiveTab] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Info Modal State
+  const [infoModal, setInfoModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error';
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    type: 'success',
+  });
+
+  const showInfoPopup = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setInfoModal({ open: true, title, message, type });
+  };
+
   // Payment Dialog State
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [activeDoc, setActiveDoc] = useState<{ id: number; number: string; remaining: number; isInvoice: boolean } | null>(null);
@@ -62,15 +81,37 @@ export default function Invoicing() {
   };
 
   const handlePostInvoice = (id: number) => {
-    dispatch(invoicingActions.postInvoice(id)).then(() => {
-      dispatch(invoicingActions.fetchInvoices());
-    });
+    dispatch(invoicingActions.postInvoice(id))
+      .unwrap()
+      .then(() => {
+        showInfoPopup(
+          'Task Completed Successfully',
+          'Invoice has been successfully posted and finalized.',
+          'success'
+        );
+        dispatch(invoicingActions.fetchInvoices());
+      })
+      .catch((err: unknown) => {
+        const error = err as { message?: string };
+        showInfoPopup('Error Posting Invoice', error?.message || 'Failed to post invoice.', 'error');
+      });
   };
 
   const handlePostBill = (id: number) => {
-    dispatch(invoicingActions.postBill(id)).then(() => {
-      dispatch(invoicingActions.fetchBills());
-    });
+    dispatch(invoicingActions.postBill(id))
+      .unwrap()
+      .then(() => {
+        showInfoPopup(
+          'Task Completed Successfully',
+          'Vendor Bill has been successfully posted and finalized.',
+          'success'
+        );
+        dispatch(invoicingActions.fetchBills());
+      })
+      .catch((err: unknown) => {
+        const error = err as { message?: string };
+        showInfoPopup('Error Posting Bill', error?.message || 'Failed to post vendor bill.', 'error');
+      });
   };
 
   const handleOpenPayment = (doc: { id: number; number: string; total: number; paid: number }, isInvoice: boolean) => {
@@ -90,13 +131,35 @@ export default function Invoicing() {
     if (!activeDoc || parsedAmount <= 0 || parsedAmount > activeDoc.remaining) return;
 
     if (activeDoc.isInvoice) {
-      dispatch(invoicingActions.payInvoice({ id: activeDoc.id, amount: parsedAmount })).then(() => {
-        dispatch(invoicingActions.fetchInvoices());
-      });
+      dispatch(invoicingActions.payInvoice({ id: activeDoc.id, amount: parsedAmount }))
+        .unwrap()
+        .then(() => {
+          showInfoPopup(
+            'Task Completed Successfully',
+            `Payment of $${parsedAmount.toFixed(2)} has been successfully registered for Invoice ${activeDoc.number}.`,
+            'success'
+          );
+          dispatch(invoicingActions.fetchInvoices());
+        })
+        .catch((err: unknown) => {
+          const error = err as { message?: string };
+          showInfoPopup('Error Registering Payment', error?.message || 'Failed to register payment.', 'error');
+        });
     } else {
-      dispatch(invoicingActions.payBill({ id: activeDoc.id, amount: parsedAmount })).then(() => {
-        dispatch(invoicingActions.fetchBills());
-      });
+      dispatch(invoicingActions.payBill({ id: activeDoc.id, amount: parsedAmount }))
+        .unwrap()
+        .then(() => {
+          showInfoPopup(
+            'Task Completed Successfully',
+            `Payment of $${parsedAmount.toFixed(2)} has been successfully registered for Vendor Bill ${activeDoc.number}.`,
+            'success'
+          );
+          dispatch(invoicingActions.fetchBills());
+        })
+        .catch((err: unknown) => {
+          const error = err as { message?: string };
+          showInfoPopup('Error Registering Payment', error?.message || 'Failed to register payment.', 'error');
+        });
     }
     setPaymentOpen(false);
   };
@@ -355,6 +418,41 @@ export default function Invoicing() {
             disabled={!activeDoc || (parseFloat(String(paymentAmount)) || 0) <= 0 || (parseFloat(String(paymentAmount)) || 0) > activeDoc.remaining}
           >
             Confirm Payment
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Universal Info/Notification Dialog */}
+      <Dialog
+        open={infoModal.open}
+        onClose={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+          {infoModal.type === 'success' ? (
+            <ApproveIcon color="success" sx={{ fontSize: 24 }} />
+          ) : (
+            <WarnIcon color="error" sx={{ fontSize: 24 }} />
+          )}
+          {infoModal.title}
+        </DialogTitle>
+        <Divider />
+        <DialogContent>
+          <Typography variant="body1" sx={{ py: 1 }}>
+            {infoModal.message}
+          </Typography>
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setInfoModal((prev) => ({ ...prev, open: false }))}
+            variant="contained"
+            color={infoModal.type === 'success' ? 'success' : 'error'}
+            fullWidth
+            sx={{ py: 1, fontWeight: 600 }}
+          >
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>
