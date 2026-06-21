@@ -262,15 +262,28 @@ public class ManufacturingService {
         // 3. Create finished goods (increment finished product stock)
         Product finishedProduct = mo.getFinishedProduct();
         int qtyProduced = mo.getQty();
+        java.math.BigDecimal currentOnHand = java.math.BigDecimal.valueOf(finishedProduct.getOnHandQty());
+        java.math.BigDecimal currentCost = finishedProduct.getCostPrice() != null ? finishedProduct.getCostPrice() : java.math.BigDecimal.ZERO;
+
         stockLedgerService.logMovement(finishedProduct, qtyProduced, StockMovementType.IN, sourceDoc);
 
-        // 4. Calculate actual unit cost and update product costPrice
+        // 4. Calculate actual unit cost and update product costPrice using WAC
         java.math.BigDecimal totalCost = totalComponentCost.add(totalOperationCost);
         java.math.BigDecimal actualUnitCost = java.math.BigDecimal.ZERO;
         if (qtyProduced > 0) {
             actualUnitCost = totalCost.divide(java.math.BigDecimal.valueOf(qtyProduced), 2, java.math.RoundingMode.HALF_UP);
         }
-        finishedProduct.setCostPrice(actualUnitCost);
+
+        java.math.BigDecimal totalCurrentValuation = currentOnHand.multiply(currentCost);
+        java.math.BigDecimal totalNewValuation = totalCost;
+        java.math.BigDecimal totalQty = currentOnHand.add(java.math.BigDecimal.valueOf(qtyProduced));
+
+        java.math.BigDecimal newCostPrice = currentCost;
+        if (totalQty.compareTo(java.math.BigDecimal.ZERO) > 0) {
+            newCostPrice = totalCurrentValuation.add(totalNewValuation)
+                    .divide(totalQty, 2, java.math.RoundingMode.HALF_UP);
+        }
+        finishedProduct.setCostPrice(newCostPrice);
         productRepository.save(finishedProduct);
 
         mo.setStatus(ManufacturingOrderStatus.DONE);

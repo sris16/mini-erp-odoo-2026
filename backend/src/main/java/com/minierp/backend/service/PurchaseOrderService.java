@@ -178,6 +178,24 @@ public class PurchaseOrderService {
                 throw new IllegalArgumentException(String.format("Cannot receive more than remaining quantity (%d) for product %s", remaining, product.getName()));
             }
 
+            // Calculate Weighted Average Cost (WAC)
+            java.math.BigDecimal currentOnHand = java.math.BigDecimal.valueOf(product.getOnHandQty());
+            java.math.BigDecimal currentCost = product.getCostPrice() != null ? product.getCostPrice() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal receivedQty = java.math.BigDecimal.valueOf(qtyToReceive);
+            java.math.BigDecimal purchasePrice = line.getUnitPrice() != null ? line.getUnitPrice() : java.math.BigDecimal.ZERO;
+
+            java.math.BigDecimal totalCurrentValuation = currentOnHand.multiply(currentCost);
+            java.math.BigDecimal totalNewValuation = receivedQty.multiply(purchasePrice);
+            java.math.BigDecimal totalQty = currentOnHand.add(receivedQty);
+
+            java.math.BigDecimal newCostPrice = currentCost;
+            if (totalQty.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                newCostPrice = totalCurrentValuation.add(totalNewValuation)
+                        .divide(totalQty, 2, java.math.RoundingMode.HALF_UP);
+            }
+            product.setCostPrice(newCostPrice);
+            productRepository.save(product);
+
             stockLedgerService.logMovement(product, qtyToReceive, StockMovementType.IN, sourceDoc);
             line.setQtyReceived((line.getQtyReceived() != null ? line.getQtyReceived() : 0) + qtyToReceive);
         }
@@ -241,39 +259,7 @@ public class PurchaseOrderService {
 
     @Transactional
     public void runReservationScheduler() {
-        // Find all products
-        List<Product> products = productRepository.findAll();
-        for (Product product : products) {
-            product.setReservedQty(0);
-        }
-
-        // Find all CONFIRMED Sales Orders ordered by date (FIFO)
-        List<SalesOrder> confirmedOrders = salesOrderRepository.findAllByOrderByOrderDateAsc().stream()
-                .filter(so -> so.getStatus() == SalesOrderStatus.CONFIRMED)
-                .toList();
-
-        for (SalesOrder so : confirmedOrders) {
-            for (SalesOrderLine line : so.getLines()) {
-                Product product = line.getProduct();
-                if (product.getProcurementStrategy() == ProcurementStrategy.MTS) {
-                    int freeStock = product.getOnHandQty() - product.getReservedQty();
-                    int toReserve = Math.min(line.getQtyOrdered(), Math.max(0, freeStock));
-
-                    if (toReserve > 0) {
-                        product.setReservedQty(product.getReservedQty() + toReserve);
-                    }
-                }
-            }
-        }
-
-        productRepository.saveAll(products);
-
-        AuditLog auditLog = AuditLog.builder()
-                .username("SYSTEM")
-                .action("RESERVATION_SCHEDULER")
-                .details("Completed reservation reallocation run for all confirmed Sales Orders.")
-                .build();
-        auditLogRepository.save(auditLog);
+        stockLedgerService.runReservationScheduler();
     }
 
     private String getCurrentUsername() {

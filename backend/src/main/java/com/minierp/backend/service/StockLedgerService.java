@@ -6,7 +6,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.*;
+import java.time.LocalDateTime;
 
 @Service
 public class StockLedgerService {
@@ -16,17 +17,26 @@ public class StockLedgerService {
     private final AuditLogRepository auditLogRepository;
     private final WarehouseLocationRepository warehouseLocationRepository;
     private final LocationStockRepository locationStockRepository;
+    private final SalesOrderRepository salesOrderRepository;
+    private final ManufacturingOrderRepository manufacturingOrderRepository;
+    private final BomComponentRepository bomComponentRepository;
 
     public StockLedgerService(ProductRepository productRepository,
                               StockLedgerRepository stockLedgerRepository,
                               AuditLogRepository auditLogRepository,
                               WarehouseLocationRepository warehouseLocationRepository,
-                              LocationStockRepository locationStockRepository) {
+                              LocationStockRepository locationStockRepository,
+                              @org.springframework.context.annotation.Lazy SalesOrderRepository salesOrderRepository,
+                              @org.springframework.context.annotation.Lazy ManufacturingOrderRepository manufacturingOrderRepository,
+                              @org.springframework.context.annotation.Lazy BomComponentRepository bomComponentRepository) {
         this.productRepository = productRepository;
         this.stockLedgerRepository = stockLedgerRepository;
         this.auditLogRepository = auditLogRepository;
         this.warehouseLocationRepository = warehouseLocationRepository;
         this.locationStockRepository = locationStockRepository;
+        this.salesOrderRepository = salesOrderRepository;
+        this.manufacturingOrderRepository = manufacturingOrderRepository;
+        this.bomComponentRepository = bomComponentRepository;
     }
 
     private WarehouseLocation getDefaultLocation() {
@@ -215,6 +225,111 @@ public class StockLedgerService {
 
     public List<StockLedger> getAllLedger() {
         return stockLedgerRepository.findAllByOrderByTimestampDesc();
+    }
+
+    @Transactional
+    public void runReservationScheduler() {
+        // 1. Reset reservedQty for all products
+        List<Product> products = productRepository.findAll();
+        for (Product product : products) {
+            product.setReservedQty(0);
+        }
+        productRepository.saveAll(products);
+
+        // 2. Reset reservedQty for all LocationStock records
+        List<LocationStock> locStocks = locationStockRepository.findAll();
+        for (LocationStock ls : locStocks) {
+            ls.setReservedQty(0);
+        }
+        locationStockRepository.saveAll(locStocks);
+
+        // 3. Fetch all reservation demands from confirmed/partially completed transactions
+        List<Demand> demands = new ArrayList<>();
+
+        // 3.1. Fetch Sales Orders (CONFIRMED or PARTIALLY_DELIVERED)
+        List<SalesOrder> salesOrders = salesOrderRepository.findAll().stream()
+                .filter(so -> so.getStatus() == SalesOrderStatus.CONFIRMED || so.getStatus() == SalesOrderStatus.PARTIALLY_DELIVERED)
+                .toList();
+        for (SalesOrder so : salesOrders) {
+            LocalDateTime date = so.getOrderDate() != null ? so.getOrderDate() : LocalDateTime.MIN;
+            for (SalesOrderLine line : so.getLines()) {
+                int remaining = line.getQtyOrdered() - (line.getQtyDelivered() != null ? line.getQtyDelivered() : 0);
+                if (remaining > 0 && line.getProduct().getProcurementStrategy() == ProcurementStrategy.MTS) {
+                    demands.add(new Demand(line.getProduct().getId(), remaining, date, "SO-" + so.getId()));
+                }
+            }
+        }
+
+        // 3.2. Fetch Manufacturing Orders (CONFIRMED or IN_PROGRESS)
+        List<ManufacturingOrder> mfgOrders = manufacturingOrderRepository.findAll().stream()
+                .filter(mo -> mo.getStatus() == ManufacturingOrderStatus.CONFIRMED || mo.getStatus() == ManufacturingOrderStatus.IN_PROGRESS)
+                .toList();
+        for (ManufacturingOrder mo : mfgOrders) {
+            LocalDateTime date = mo.getCreatedDate() != null ? mo.getCreatedDate() : LocalDateTime.MIN;
+            if (mo.getBom() != null) {
+                List<BomComponent> components = bomComponentRepository.findByBomId(mo.getBom().getId());
+                for (BomComponent comp : components) {
+                    int totalQtyNeeded = comp.getQuantity() * mo.getQty();
+                    demands.add(new Demand(comp.getComponent().getId(), totalQtyNeeded, date, "MO-" + mo.getId()));
+                }
+            }
+        }
+
+        // 4. Sort demands by date ascending (FIFO - First In, First Out)
+        demands.sort(Comparator.comparing(Demand::getDate));
+
+        // 5. Allocate reservations one-by-one
+        WarehouseLocation defaultLoc = getDefaultLocation();
+        for (Demand demand : demands) {
+            Product product = productRepository.findById(demand.getProductId()).orElse(null);
+            if (product == null) continue;
+
+            int freeStock = product.getOnHandQty() - product.getReservedQty();
+            int toReserve = Math.min(demand.getQtyNeeded(), Math.max(0, freeStock));
+
+            if (toReserve > 0) {
+                // Update Product
+                product.setReservedQty(product.getReservedQty() + toReserve);
+                productRepository.save(product);
+
+                // Update LocationStock (at default MAIN location)
+                LocationStock locStock = locationStockRepository.findByProductIdAndLocationId(product.getId(), defaultLoc.getId())
+                        .orElseGet(() -> LocationStock.builder()
+                                .product(product)
+                                .location(defaultLoc)
+                                .onHandQty(0)
+                                .reservedQty(0)
+                                .build());
+                locStock.setReservedQty(locStock.getReservedQty() + toReserve);
+                locationStockRepository.save(locStock);
+            }
+        }
+
+        AuditLog auditLog = AuditLog.builder()
+                .username("SYSTEM")
+                .action("RESERVATION_SCHEDULER")
+                .details(String.format("Executed unified reservation scheduler. Re-apportioned reservations for %d pending demands.", demands.size()))
+                .build();
+        auditLogRepository.save(auditLog);
+    }
+
+    private static class Demand {
+        private final Long productId;
+        private final int qtyNeeded;
+        private final LocalDateTime date;
+        private final String source;
+
+        public Demand(Long productId, int qtyNeeded, LocalDateTime date, String source) {
+            this.productId = productId;
+            this.qtyNeeded = qtyNeeded;
+            this.date = date;
+            this.source = source;
+        }
+
+        public Long getProductId() { return productId; }
+        public int getQtyNeeded() { return qtyNeeded; }
+        public LocalDateTime getDate() { return date; }
+        public String getSource() { return source; }
     }
 
     private String getCurrentUsername() {
